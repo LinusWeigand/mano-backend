@@ -7,7 +7,6 @@ CREATE TABLE
         email VARCHAR(255) NOT NULL UNIQUE,
         hashed VARCHAR(255) NOT NULL,
         salt VARCHAR(255) NOT NULL,
-        verified BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP
         WITH
             TIME ZONE DEFAULT NOW(),

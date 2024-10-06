@@ -11,6 +11,7 @@ pub struct CreateViewerSchema {
     pub email: String,
     pub hashed: String,
     pub salt: String,
+    pub verified: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -18,4 +19,5 @@ pub struct UpdateViewerSchema {
     pub email: Option<String>,
     pub hashed: Option<String>,
     pub salt: Option<String>,
+    pub verified: Option<bool>,
 }
