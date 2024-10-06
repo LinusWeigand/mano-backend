@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use sqlx::query;
 use uuid::Uuid;
 
-use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, SessionLoginSchema}, AppState};
+use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema, SessionLoginSchema}, AppState};
 
 pub async fn pre_register(
     State(data): State<Arc<AppState>>,
@@ -171,25 +171,8 @@ pub async fn register(
             "status": "fail",
             "message": "Internal Server Error"
         });
-        println!("register: fail: failed to delete pre_registered row.");
+        println!("register: fail: failed to set pre_registered was_used to true.");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
-    }
-
-    let pre_registered_entry = query_result.unwrap();
-
-    // Delete pre_registered object from table
-    let query_result = sqlx::query!(
-        "DELETE FROM pre_registered WHERE id = $1",
-        pre_registered_entry.id)
-    .execute(&data.db)
-    .await;
-
-    if let Err(e) = &query_result {
-        println!("register: could not delete pre_registered Token: {:?}", e);
-    }
-    let rows_affected = query_result.unwrap().rows_affected();
-    if rows_affected <= 0 {
-        println!("register: no rows where affected when trying to delete pre_registered token");
     }
 
     let response = json!({
@@ -335,4 +318,87 @@ pub async fn pre_reset_password(
     });
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+pub async fn reset_password(
+    State(data): State<Arc<AppState>>,
+    Json(body): Json<ResetPasswordSchema>
+
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let query_result = sqlx::query_as!(
+        ResetPasswordModel,
+        "SELECT * FROM reset_password WHERE viewer_id = (SELECT id FROM viewers WHERE email = $1)",
+        &body.email
+    ).fetch_one(&data.db).await;
+
+    if let Err(e) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": "Passwort Reset failed: No matching record found."
+        });
+        println!("reset_password: fail: kein Token gefunden.");
+        return Err((StatusCode::NOT_FOUND, Json(error_response)));
+    }
+
+    let reset_password_entry = query_result.unwrap();
+    let salted = format!("{}{}", body.reset_password_token, reset_password_entry.salt);
+    let mut hasher = Sha256::new();
+    hasher.update(salted.as_bytes());
+    let hashed_reset_password_token = hex::encode(hasher.finalize());
+
+    if hashed_reset_password_token != reset_password_entry.hashed_reset_password_token {
+         let error_response = json!({
+            "status": "fail",
+            "message": "Reset Password token does not match."
+        });
+        println!("reset_password: fail: Reset passwort token does not match");
+        return Err((StatusCode::FORBIDDEN, Json(error_response)));
+    }
+
+    let salt = Uuid::new_v4().to_string();
+    let salted = format!("{}{}", body.password, salt);
+    let mut hasher = Sha256::new();
+    hasher.update(salted.as_bytes());
+    let hashed_password = hex::encode(hasher.finalize());
+
+    // Update viewer row
+    let query_result = sqlx::query_as!(
+        ViewerModel,
+        "UPDATE viewers SET hashed = $1, salt = $2 RETURNING *",
+        hashed_password,
+        salt
+    ).fetch_one(&data.db).await;
+
+    if let Err(e) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": "Internal Server Error"
+        });
+        println!("reset_password: fail: something went wrong while trying to update viewers hashed and salt: {:?}, ", e);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
+     //Set was_used to true
+     let query_result = sqlx::query_as!(
+        ResetPasswordModel,
+        "UPDATE reset_password SET was_used = TRUE WHERE id = $1 RETURNING *",
+        reset_password_entry.id
+    ).fetch_one(&data.db).await;
+
+    if let Err(_) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": "Internal Server Error"
+        });
+        println!("register: fail: failed to set reset_password was_used to true.");
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
+    let response = json!({
+        "status": "success",
+        "message": "User verified"
+    });
+
+    Ok((StatusCode::OK, Json(response)))
+
 }

@@ -53,6 +53,7 @@ pub struct ResetPasswordModel {
     pub viewer_id: Uuid,
     pub hashed_reset_password_token: String,
     pub salt: String,
+    pub was_used: bool,
     #[serde(rename = "createdAt")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "expiresAt")]

@@ -32,6 +32,13 @@ pub struct PreResetPasswordSchema {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct ResetPasswordSchema {
+    pub email: String,
+    pub password: String,
+    pub reset_password_token: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct UpdateViewerSchema {
     pub email: Option<String>,
     pub hashed: Option<String>,
