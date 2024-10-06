@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use sqlx::query;
 use uuid::Uuid;
 
-use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema, SessionLoginSchema}, AppState};
+use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema}, AppState};
 
 pub async fn pre_register(
     State(data): State<Arc<AppState>>,
@@ -313,7 +313,7 @@ pub async fn pre_reset_password(
     }
 
     let response = json!({
-        "status". "success",
+        "status": "success",
         "message": "Zurücksetzungs E-Mail gesendet."
     });
 
@@ -396,7 +396,7 @@ pub async fn reset_password(
 
     let response = json!({
         "status": "success",
-        "message": "User verified"
+        "message": "Password reset."
     });
 
     Ok((StatusCode::OK, Json(response)))

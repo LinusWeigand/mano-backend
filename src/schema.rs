@@ -45,3 +45,10 @@ pub struct UpdateViewerSchema {
     pub salt: Option<String>,
     pub verified: Option<bool>,
 }
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SessionVerifySchema {
+    pub email: String,
+    pub session_token: String,
+}

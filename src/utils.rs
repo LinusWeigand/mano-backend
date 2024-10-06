@@ -4,12 +4,12 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::{model::UserSessionModel, schema::SessionLoginSchema, AppState};
+use crate::{model::UserSessionModel, schema::SessionVerifySchema, AppState};
 
 
 pub async fn verify_session_token(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<SessionLoginSchema>
+    Json(body): Json<SessionVerifySchema>
 ) -> bool {
 
     let query_result = sqlx::query_as!(
