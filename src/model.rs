@@ -25,6 +25,7 @@ pub struct PreRegisteredModel {
     pub viewer_id: Uuid,
     pub verification_code_hashed: String,
     pub salt: String,
+    pub was_used: bool,
     #[serde(rename = "createdAt")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "expiresAt")]

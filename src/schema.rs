@@ -15,6 +15,13 @@ pub struct CreateViewerSchema {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct PreRegisterSchema {
+    pub email: String,
+    pub password: String,
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct UpdateViewerSchema {
     pub email: Option<String>,
     pub hashed: Option<String>,

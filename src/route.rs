@@ -4,10 +4,10 @@ use axum::{
     Router,
 };
 use crate::{
-    handlers::crud::{
+    handlers::{auth::pre_register, crud::{
         create_viewer_handler, delete_viewer_handler, edit_viewer_handler, get_viewer_handler,
         health_checker_handler, viewer_list_handler,
-    },
+    }},
     AppState,
 };
 
@@ -15,6 +15,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/healthchecker", get(health_checker_handler))
         .route("/api/viewers", post(create_viewer_handler))
+        .route("/api/pre-register", post(pre_register))
         .route("/api/viewers", get(viewer_list_handler))
         .route(
             "/api/viewers/:id",
