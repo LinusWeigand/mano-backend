@@ -15,7 +15,7 @@ pub struct CreateViewerSchema {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PreRegisterSchema {
+pub struct AuthSchema {
     pub email: String,
     pub password: String,
 }
@@ -26,6 +26,10 @@ pub struct RegisterSchema {
     pub email: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PreResetPasswordSchema {
+    pub email: String,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdateViewerSchema {

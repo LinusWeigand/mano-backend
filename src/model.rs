@@ -31,3 +31,30 @@ pub struct PreRegisteredModel {
     #[serde(rename = "expiresAt")]
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct UserSessionModel {
+    pub id: Uuid,
+    pub viewer_id: Uuid,
+    pub hashed_session_token: String,
+    pub salt: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct ResetPasswordModel {
+    pub id: Uuid,
+    pub viewer_id: Uuid,
+    pub hashed_reset_password_token: String,
+    pub salt: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}

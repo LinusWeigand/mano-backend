@@ -1,14 +1,16 @@
 use std::sync::Arc;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use lettre::transport::smtp::commands::Auth;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use sqlx::query;
 use uuid::Uuid;
 
-use crate::{model::{PreRegisteredModel, ViewerModel}, schema::{PreRegisterSchema, RegisterSchema}, AppState};
+use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, SessionLoginSchema}, AppState};
 
 pub async fn pre_register(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<PreRegisterSchema>
+    Json(body): Json<AuthSchema>
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
 
     let salt = Uuid::new_v4().to_string();
@@ -74,16 +76,16 @@ pub async fn pre_register(
     }
 
     //Send Email to verify
-    let subject = "Verify E-Mail";
-    let body =  format!("Click this link to verify your email: {}/{}", &data.url, &verification_code);
-    let result = data.email_manager.send_email(&viewer.email, subject, &body);
+    let subject = "E-Mail verifizieren";
+    let body =  format!("Klicke diesen Link um deine E-Mail zu verifizieren: {}/verify-email/{}", &data.url, &verification_code);
+    let email_result = data.email_manager.send_email(&viewer.email, subject, &body);
 
-    if let Err(e) = result {
+    if let Err(e) = email_result {
         let error_response = json!({
             "status": "error",
-            "message": format!("{:?}", e)
+            "message": "Internal Server Error"
         });
-        println!("Pre_register: E-Mail failed: duplicate key");
+        println!("pre_register: E-Mail failed: {:?}", e);
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
@@ -164,7 +166,7 @@ pub async fn register(
         pre_registered_entry.id
     ).fetch_one(&data.db).await;
 
-    if let Err(e) = query_result {
+    if let Err(_) = query_result {
         let error_response = json!({
             "status": "fail",
             "message": "Internal Server Error"
@@ -173,9 +175,163 @@ pub async fn register(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
+    let pre_registered_entry = query_result.unwrap();
+
+    // Delete pre_registered object from table
+    let query_result = sqlx::query!(
+        "DELETE FROM pre_registered WHERE id = $1",
+        pre_registered_entry.id)
+    .execute(&data.db)
+    .await;
+
+    if let Err(e) = &query_result {
+        println!("register: could not delete pre_registered Token: {:?}", e);
+    }
+    let rows_affected = query_result.unwrap().rows_affected();
+    if rows_affected <= 0 {
+        println!("register: no rows where affected when trying to delete pre_registered token");
+    }
+
     let response = json!({
         "status": "success",
         "message": "User verified"
+    });
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+pub async fn login(
+    State(data): State<Arc<AppState>>,
+    Json(body): Json<AuthSchema>,
+
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let query_result = sqlx::query_as!(
+        ViewerModel,
+        "SELECT * FROM viewers WHERE email = $1",
+        &body.email
+    ).fetch_one(&data.db).await;
+
+    if let Err(_) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": "User not found."
+        });
+        println!("login: fail: user not found.");
+        return Err((StatusCode::NOT_FOUND, Json(error_response)));
+    }
+
+    let viewer = query_result.unwrap();
+    let salted = format!("{}{}", &body.password, &viewer.salt);
+    let mut hasher = Sha256::new();
+    hasher.update(salted.as_bytes());
+    let hashed_password = hex::encode(hasher.finalize());
+
+    if hashed_password != viewer.hashed {
+        let error_response = json!({
+            "status": "success",
+            "message": "Password incorrect"
+        });
+        println!("login: fail: password incorrect");
+        return Err((StatusCode::FORBIDDEN, Json(error_response)));
+    }
+
+    let session_token = Uuid::new_v4();
+    let salt = Uuid::new_v4().to_string();
+    let salted = format!("{}{}", session_token, salt);
+    let mut hasher = Sha256::new();
+    hasher.update(salted.as_bytes());
+    let hashed_session_token = hex::encode(hasher.finalize());
+    
+    // Create Session Token
+    let query_result = sqlx::query_as!(
+        UserSessionModel,
+        "INSERT INTO user_sessions (viewer_id, hashed_session_token, salt) VALUES ($1, $2, $3) RETURNING *",
+        &viewer.id,
+        &hashed_session_token,
+        &salt,
+    ).fetch_one(&data.db).await;
+
+    if let Err(_) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": "Internal Server Error."
+        });
+        println!("login: fail: creating session token.");
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
+    let response = json!({
+        "status": "success",
+        "data": json!({
+            "session_token": session_token
+        })
+    });
+    Ok((StatusCode::OK, Json(response)))
+}
+
+pub async fn pre_reset_password(
+    State(data): State<Arc<AppState>>,
+    Json(body): Json<PreResetPasswordSchema>
+
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+
+    let query_result = sqlx::query_as!(
+        ViewerModel,
+        "SELECT * FROM viewers WHERE email = $1",
+        &body.email
+    ).fetch_one(&data.db).await;
+
+    if let Err(e) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": format!("User with email {} not found", &body.email)
+        });
+        println!("pre_reset_password: fail: User witt email {} not found", &body.email);
+        return Err((StatusCode::NOT_FOUND, Json(error_response)));
+    }
+
+    let viewer = query_result.unwrap();
+    let reset_password_token = Uuid::new_v4().to_string();
+    let salt = Uuid::new_v4().to_string();
+    let salted = format!("{}{}", reset_password_token, salt);
+    let mut hasher = Sha256::new();
+    hasher.update(salted.as_bytes());
+    let hashed_reset_password_token = hex::encode(hasher.finalize());
+
+    // Create Reset Password Token
+    let query_result = sqlx::query_as!(
+        ResetPasswordModel,
+        "INSERT INTO reset_password (viewer_id, hashed_reset_password_token, salt) VALUES ($1, $2, $3) RETURNING *",
+        &viewer.id,
+        &hashed_reset_password_token,
+        &salt,
+    ).fetch_one(&data.db).await;
+
+    if let Err(e) = query_result {
+        let error_response = json!({
+            "status": "fail",
+            "message": "Internal Server Error"
+        });
+        println!("pre_reset_password: fail: Something went wrong while trying to insert a resert password Token.");
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
+    let subject = "Passwort zurücksetzen";
+    let body = format!("Klicke diesen Link um dein Passwort zurückzusetzen: {}/reset-password/{}", &data.url, &reset_password_token);
+    let email_result = data.email_manager.send_email(&viewer.email, subject, &body);
+
+    if let Err(e) = email_result {
+        let error_response = json!({
+            "status": "error",
+            "message": "Internal Server Error"
+        });
+        println!("pre_reset_password: E-Mail failed: {:?}", e);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
+    let response = json!({
+        "status". "success",
+        "message": "Zurücksetzungs E-Mail gesendet."
     });
 
     Ok((StatusCode::OK, Json(response)))

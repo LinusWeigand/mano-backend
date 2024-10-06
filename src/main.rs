@@ -3,6 +3,7 @@ mod schema;
 mod handlers;
 mod route;
 mod email;
+mod utils;
 
 use std::{env, process::exit, sync::Arc};
 use email::EmailManager;
