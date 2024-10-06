@@ -20,6 +20,12 @@ pub struct PreRegisterSchema {
     pub password: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RegisterSchema {
+    pub verification_code: String,
+    pub email: String,
+}
+
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdateViewerSchema {
