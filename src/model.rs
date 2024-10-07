@@ -7,6 +7,8 @@ use uuid::Uuid;
 pub struct ViewerModel {
     pub id: Uuid,
     pub email: String,
+    pub first_name: String,
+    pub last_name: String,
     pub hashed: String,
     pub salt: String,
     pub verified: bool,
@@ -44,7 +46,6 @@ pub struct UserSessionModel {
     #[serde(rename = "expiresAt")]
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
-
 
 #[derive(Debug, FromRow, Deserialize, Serialize)]
 #[allow(non_snake_case)]

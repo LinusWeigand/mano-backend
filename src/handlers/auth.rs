@@ -1,60 +1,75 @@
-use std::sync::Arc;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, State},
+    http::{
+        header::{self, SET_COOKIE},
+        HeaderMap, StatusCode,
+    },
+    response::IntoResponse,
+    Json,
+};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema}, AppState};
+use crate::{
+    model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel},
+    schema::{
+        LoginSchema, PreRegisterSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema,
+    },
+    AppState,
+};
 
 pub async fn pre_register(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<AuthSchema>
+    Json(body): Json<PreRegisterSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-
     let salt = Uuid::new_v4().to_string();
     let salted = format!("{}{}", body.password, salt);
     let mut hasher = Sha256::new();
     hasher.update(salted.as_bytes());
     let hashed_password = hex::encode(hasher.finalize());
 
-
     let query_result = sqlx::query_as!(
         ViewerModel,
-        "INSERT INTO viewers (email, hashed, salt) VALUES ($1, $2, $3) RETURNING *",
+        "INSERT INTO viewers (email, first_name, last_name, hashed, salt) VALUES ($1, $2, $3, $4, $5) RETURNING *",
         body.email,
+        body.first_name,
+        body.last_name,
         hashed_password,
         salt
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     // Check for errors
     if let Err(e) = query_result {
         if e.to_string()
             .contains("duplicate key value violates unique constraint")
-            {
-                let error_response = json!({
-                    "status": "fail",
-                    "message": "Viewer with that email already exists"
-                });
-                println!("Pre_register: POST fail: duplicate key");
-                return Err((StatusCode::CONFLICT, Json(error_response)));
-            }
+        {
+            let error_response = json!({
+                "status": "fail",
+                "message": "Viewer with that email already exists"
+            });
+            println!("Pre_register: POST fail: duplicate key");
+            return Err((StatusCode::CONFLICT, Json(error_response)));
+        }
         let error_response = json!({
             "status": "error",
             "message": format!("{:?}", e)
         });
         println!("Pre_register: POST fail: duplicate key");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
-    } 
+    }
 
     let viewer = query_result.unwrap();
     let verification_code = Uuid::new_v4().to_string();
     let salt = Uuid::new_v4().to_string();
-    let salted = format!("{}{}",verification_code, salt);
+    let salted = format!("{}{}", verification_code, salt);
     let mut hasher = Sha256::new();
     hasher.update(salted.as_bytes());
     let verification_code_hashed = hex::encode(hasher.finalize());
     let viewer_id = viewer.id;
-    
 
     let query_result = sqlx::query_as!(
         PreRegisteredModel,
@@ -75,7 +90,12 @@ pub async fn pre_register(
 
     //Send Email to verify
     let subject = "E-Mail verifizieren";
-    let body =  format!("Klicke diesen Link um deine E-Mail zu verifizieren: {}/verify-email/{}", &data.url, &verification_code);
+    let body = format!(
+        "Klicke diesen Link um deine E-Mail zu verifizieren: {}?vc={}&e={}",
+        &data.url,
+        urlencoding::encode(&verification_code),
+        urlencoding::encode(&viewer.email)
+    );
     let email_result = data.email_manager.send_email(&viewer.email, subject, &body);
 
     if let Err(e) = email_result {
@@ -93,20 +113,20 @@ pub async fn pre_register(
             "viewer": viewer
         })
     });
-   Ok((StatusCode::OK, Json(viewer_reponse))) 
+    Ok((StatusCode::OK, Json(viewer_reponse)))
 }
 
 pub async fn register(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<RegisterSchema>
+    Json(body): Json<RegisterSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-
     let query_result = sqlx::query_as!(
         PreRegisteredModel,
         "SELECT * FROM pre_registered WHERE viewer_id = (SELECT id FROM viewers WHERE email = $1)",
         body.email
-    ).fetch_one(&data.db).await;
-
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(e) = query_result {
         let error_response = json!({
@@ -146,7 +166,9 @@ pub async fn register(
         ViewerModel,
         "UPDATE viewers SET verified = TRUE WHERE email = $1 RETURNING *",
         body.email
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(e) = query_result {
         let error_response = json!({
@@ -162,7 +184,9 @@ pub async fn register(
         PreRegisteredModel,
         "UPDATE pre_registered SET was_used = TRUE WHERE id = $1 RETURNING *",
         pre_registered_entry.id
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(_) = query_result {
         let error_response = json!({
@@ -183,14 +207,16 @@ pub async fn register(
 
 pub async fn login(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<AuthSchema>,
-
+    Json(body): Json<LoginSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    println!("login attempt.");
     let query_result = sqlx::query_as!(
         ViewerModel,
         "SELECT * FROM viewers WHERE email = $1",
         &body.email
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(_) = query_result {
         let error_response = json!({
@@ -222,7 +248,7 @@ pub async fn login(
     let mut hasher = Sha256::new();
     hasher.update(salted.as_bytes());
     let hashed_session_token = hex::encode(hasher.finalize());
-    
+
     // Create Session Token
     let query_result = sqlx::query_as!(
         UserSessionModel,
@@ -241,33 +267,48 @@ pub async fn login(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
+    // Set the session token as an HTTP-only cookie
+    let cookie = format!(
+        "session_token={}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={}",
+        session_token,
+        60 * 60 * 24 * 7 // 1 week in seconds
+    );
+
     let response = json!({
         "status": "success",
-        "data": json!({
-            "session_token": session_token
-        })
+        "data": "User logged in."
     });
-    Ok((StatusCode::OK, Json(response)))
+    println!("Login successful.");
+    Ok((
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie)],
+        Json(response),
+    )
+        .into_response())
 }
 
 pub async fn pre_reset_password(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<PreResetPasswordSchema>
-
+    Json(body): Json<PreResetPasswordSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-
+    println!("pre_reset_password");
     let query_result = sqlx::query_as!(
         ViewerModel,
         "SELECT * FROM viewers WHERE email = $1",
         &body.email
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(e) = query_result {
         let error_response = json!({
             "status": "fail",
             "message": format!("User with email {} not found", &body.email)
         });
-        println!("pre_reset_password: fail: User witt email {} not found", &body.email);
+        println!(
+            "pre_reset_password: fail: User witt email {} not found",
+            &body.email
+        );
         return Err((StatusCode::NOT_FOUND, Json(error_response)));
     }
 
@@ -298,7 +339,12 @@ pub async fn pre_reset_password(
     }
 
     let subject = "Passwort zurücksetzen";
-    let body = format!("Klicke diesen Link um dein Passwort zurückzusetzen: {}/reset-password/{}", &data.url, &reset_password_token);
+    let body = format!(
+        "Klicke diesen Link um dein Passwort zurückzusetzen: {}/reset-password?c={}&e={}",
+        &data.url,
+        urlencoding::encode(&reset_password_token),
+        urlencoding::encode(&viewer.email)
+    );
     let email_result = data.email_manager.send_email(&viewer.email, subject, &body);
 
     if let Err(e) = email_result {
@@ -320,14 +366,16 @@ pub async fn pre_reset_password(
 
 pub async fn reset_password(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<ResetPasswordSchema>
-
+    Json(body): Json<ResetPasswordSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    println!("pre_reset_password");
     let query_result = sqlx::query_as!(
         ResetPasswordModel,
         "SELECT * FROM reset_password WHERE viewer_id = (SELECT id FROM viewers WHERE email = $1)",
         &body.email
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(e) = query_result {
         let error_response = json!({
@@ -345,7 +393,7 @@ pub async fn reset_password(
     let hashed_reset_password_token = hex::encode(hasher.finalize());
 
     if hashed_reset_password_token != reset_password_entry.hashed_reset_password_token {
-         let error_response = json!({
+        let error_response = json!({
             "status": "fail",
             "message": "Reset Password token does not match."
         });
@@ -365,7 +413,9 @@ pub async fn reset_password(
         "UPDATE viewers SET hashed = $1, salt = $2 RETURNING *",
         hashed_password,
         salt
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(e) = query_result {
         let error_response = json!({
@@ -376,12 +426,14 @@ pub async fn reset_password(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
-     //Set was_used to true
-     let query_result = sqlx::query_as!(
+    //Set was_used to true
+    let query_result = sqlx::query_as!(
         ResetPasswordModel,
         "UPDATE reset_password SET was_used = TRUE WHERE id = $1 RETURNING *",
         reset_password_entry.id
-    ).fetch_one(&data.db).await;
+    )
+    .fetch_one(&data.db)
+    .await;
 
     if let Err(_) = query_result {
         let error_response = json!({
@@ -398,5 +450,27 @@ pub async fn reset_password(
     });
 
     Ok((StatusCode::OK, Json(response)))
+}
 
+pub async fn get_viewer(
+    State(data): State<Arc<AppState>>,
+    Path(email): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let query_result =
+        sqlx::query_as!(ViewerModel, "SELECT * FROM viewers WHERE email = $1", email)
+            .fetch_one(&data.db)
+            .await;
+
+    match query_result {
+        Ok(viewer) => {
+            let viewer_response = json!({"status": "success", "data": json!({ "viewer": viewer})});
+            println!("get_viewer: viewer found.");
+            Ok(Json(viewer_response))
+        }
+        Err(e) => {
+            let error_response = json!({"status": "fail", "message": format!("Viewer with id {} not found: {:?}", email, e)});
+            println!("get_viewer: viewer not found.");
+            Err((StatusCode::NOT_FOUND, Json(error_response)))
+        }
+    }
 }

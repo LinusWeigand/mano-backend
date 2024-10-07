@@ -1,15 +1,18 @@
-use std::sync::Arc;
+use crate::{
+    handlers::{
+        auth::{get_viewer, login, pre_register, pre_reset_password, register, reset_password},
+        crud::{
+            create_viewer_handler, delete_viewer_handler, edit_viewer_handler,
+            health_checker_handler, viewer_list_handler,
+        },
+    },
+    AppState,
+};
 use axum::{
     routing::{get, post},
     Router,
 };
-use crate::{
-    handlers::{auth::{login, pre_register, pre_reset_password, register, reset_password}, crud::{
-        create_viewer_handler, delete_viewer_handler, edit_viewer_handler, get_viewer_handler,
-        health_checker_handler, viewer_list_handler,
-    }},
-    AppState,
-};
+use std::sync::Arc;
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
     Router::new()
@@ -23,7 +26,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/api/viewers", get(viewer_list_handler))
         .route(
             "/api/viewers/:id",
-            get(get_viewer_handler)
+            get(get_viewer)
                 .patch(edit_viewer_handler)
                 .delete(delete_viewer_handler),
         )

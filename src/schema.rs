@@ -15,8 +15,16 @@ pub struct CreateViewerSchema {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AuthSchema {
+pub struct LoginSchema {
     pub email: String,
+    pub password: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PreRegisterSchema {
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
     pub password: String,
 }
 
@@ -45,7 +53,6 @@ pub struct UpdateViewerSchema {
     pub salt: Option<String>,
     pub verified: Option<bool>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SessionVerifySchema {
