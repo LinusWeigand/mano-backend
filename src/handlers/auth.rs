@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use lettre::transport::smtp::commands::Auth;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::query;
 use uuid::Uuid;
 
 use crate::{model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel}, schema::{AuthSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema}, AppState};

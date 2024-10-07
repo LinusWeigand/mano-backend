@@ -23,6 +23,7 @@ curl -X PATCH http://localhost:8000/api/viewers/1f52f4af-e5b3-4ddd-8c54-d2280fa7
 curl -X DELETE http://localhost:8000/api/viewers/1f52f4af-e5b3-4ddd-8c54-d2280fa797c9
 
 
+
 # Pre Register
 curl -X POST http://localhost:8000/api/pre-register -H "Content-Type: application/json" -d '{"email": "linus@couchtec.com", "password": "lol"}'
 
@@ -31,6 +32,7 @@ curl -X POST http://localhost:8000/api/register -H "Content-Type: application/js
 
 # Login
 curl -X POST http://localhost:8000/api/login -H "Content-Type: application/json" -d '{"email": "linus@couchtec.com", "password": "new"}'
+
 
 
 # Pre Reset Password
