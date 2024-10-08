@@ -89,14 +89,12 @@ pub async fn pre_register(
     }
 
     //Send Email to verify
-    let subject = "E-Mail verifizieren";
-    let body = format!(
-        "Klicke diesen Link um deine E-Mail zu verifizieren: {}?vc={}&e={}",
+    let email_result = data.email_manager.send_verify_email(
+        &viewer.email,
         &data.url,
-        urlencoding::encode(&verification_code),
-        urlencoding::encode(&viewer.email)
+        &verification_code,
+        &viewer.first_name,
     );
-    let email_result = data.email_manager.send_email(&viewer.email, subject, &body);
 
     if let Err(e) = email_result {
         let error_response = json!({
@@ -320,6 +318,21 @@ pub async fn pre_reset_password(
     hasher.update(salted.as_bytes());
     let hashed_reset_password_token = hex::encode(hasher.finalize());
 
+    println!("Pre_reset_password: insert into reset_password:");
+    println!(
+        "token: {}, hashed: {}",
+        &reset_password_token, &hashed_reset_password_token
+    );
+
+    // Delete all old Reset Password Token
+    let _ = sqlx::query_as!(
+        ResetPasswordModel,
+        "DELETE FROM reset_password WHERE viewer_id = (SELECT id FROM viewers WHERE email = $1)",
+        &body.email
+    )
+    .execute(&data.db)
+    .await;
+
     // Create Reset Password Token
     let query_result = sqlx::query_as!(
         ResetPasswordModel,
@@ -338,14 +351,13 @@ pub async fn pre_reset_password(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
-    let subject = "Passwort zurücksetzen";
-    let body = format!(
-        "Klicke diesen Link um dein Passwort zurückzusetzen: {}/reset-password?c={}&e={}",
+    //Send Email to reset password
+    let email_result = data.email_manager.send_reset_password_email(
+        &viewer.email,
         &data.url,
-        urlencoding::encode(&reset_password_token),
-        urlencoding::encode(&viewer.email)
+        &reset_password_token,
+        &viewer.first_name,
     );
-    let email_result = data.email_manager.send_email(&viewer.email, subject, &body);
 
     if let Err(e) = email_result {
         let error_response = json!({
@@ -387,7 +399,10 @@ pub async fn reset_password(
     }
 
     let reset_password_entry = query_result.unwrap();
-    let salted = format!("{}{}", body.reset_password_token, reset_password_entry.salt);
+    let salted = format!(
+        "{}{}",
+        &body.reset_password_token, &reset_password_entry.salt
+    );
     let mut hasher = Sha256::new();
     hasher.update(salted.as_bytes());
     let hashed_reset_password_token = hex::encode(hasher.finalize());
@@ -398,6 +413,10 @@ pub async fn reset_password(
             "message": "Reset Password token does not match."
         });
         println!("reset_password: fail: Reset passwort token does not match");
+        println!(
+            "code: {}, hashed: {}",
+            &body.reset_password_token, &hashed_reset_password_token
+        );
         return Err((StatusCode::FORBIDDEN, Json(error_response)));
     }
 
