@@ -1012,6 +1012,7 @@ name = "mano"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "chrono",
  "dotenv",
  "hex",
@@ -2093,6 +2094,8 @@ dependencies = [
  "bitflags",
  "bytes",
  "http",
+ "http-body",
+ "http-body-util",
  "pin-project-lite",
  "tower-layer",
  "tower-service",

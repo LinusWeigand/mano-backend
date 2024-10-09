@@ -13,8 +13,7 @@ CREATE TABLE
         skills VARCHAR(20)[] NOT NULL,
         bio TEXT NOT NULL,
         experience SMALLINT NOT NULL CHECK (experience <= 75),
-        portfolio BYTEA[] NOT NULL,
-        portfolio_bio TEXT NOT NULL,
+        -- portfolio BYTEA[] NOT NULL,
 
         created_at TIMESTAMP
         WITH

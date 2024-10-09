@@ -41,3 +41,22 @@ curl -X POST http://localhost:8000/api/pre-reset-password -H "Content-Type: appl
 
 # Pre Reset Password
 curl -X POST http://localhost:8000/api/reset-password -H "Content-Type: application/json" -d '{"email": "linus@couchtec.com", "password": "new", "reset_password_token": "16fd0481-08c9-49c7-92ab-157af89c3632"}'
+
+portfolio1=$(base64 -w 0 holzrausch1.png)
+portfolio2=$(base64 -w 0 holzrausch2.png)
+
+curl -X POST http://localhost/api/profile \
+-H "Content-Type: application/json" \
+-d '{
+  "email": "linus@couchtec.com",
+  "name": "John Doe",
+  "craft": "Carpentry",
+  "location": "New York",
+  "website": "https://johndoe.com",
+  "instagram": "https://instagram.com/johndoe",
+  "skills": ["woodworking", "furniture making", "design"],
+  "bio": "Experienced carpenter with over 10 years in the industry.",
+  "experience": 10,
+  "portfolio_bio": "Here is my portfolio showcasing my recent work."
+}'
+

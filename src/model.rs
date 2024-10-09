@@ -60,3 +60,23 @@ pub struct ResetPasswordModel {
     #[serde(rename = "expiresAt")]
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct ProfileModel {
+    pub id: Uuid,
+    pub viewer_id: Uuid,
+    pub name: String,
+    pub craft: String,
+    pub location: String,
+    pub website: Option<String>,
+    pub instagram: Option<String>,
+    pub skills: Vec<String>,
+    pub bio: String,
+    pub experience: i16,
+    // pub portfolio: Vec<Vec<String>>,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
