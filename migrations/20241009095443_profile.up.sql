@@ -10,7 +10,7 @@ CREATE TABLE
         location VARCHAR(100) NOT NULL,
         website VARCHAR(100),
         instagram VARCHAR(100),
-        skills VARCHAR(20)[],
+        skills VARCHAR(20)[] NOT NULL,
         bio TEXT NOT NULL,
         experience SMALLINT NOT NULL CHECK (experience <= 75),
         portfolio BYTEA[] NOT NULL,

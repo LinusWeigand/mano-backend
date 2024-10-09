@@ -59,3 +59,14 @@ pub struct SessionVerifySchema {
     pub email: String,
     pub session_token: String,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateProfilSchema {
+    pub viewer_id: String,
+    pub name: String,
+    pub craft: String,
+    pub location: String,
+    pub website: Option<String>,
+    pub instagram: Option<String>,
+    pub skills: Vec<String>,
+}
