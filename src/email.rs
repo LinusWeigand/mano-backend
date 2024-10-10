@@ -1,4 +1,4 @@
-use lettre::message::header::{self, Subject};
+use lettre::message::header::{self};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::{Error as SmtpError, SmtpTransport};
 use lettre::{Address, Message, Transport};
@@ -30,25 +30,25 @@ impl EmailManager {
         })
     }
 
-    pub fn send_email(
-        &self,
-        email: &str,
-        subject: &str,
-        body: &str,
-    ) -> Result<(), EmailManagerError> {
-        let from_address: Address = self.email.parse()?;
-        let to_address: Address = email.parse()?;
+    // pub fn send_email(
+    //     &self,
+    //     email: &str,
+    //     subject: &str,
+    //     body: &str,
+    // ) -> Result<(), EmailManagerError> {
+    //     let from_address: Address = self.email.parse()?;
+    //     let to_address: Address = email.parse()?;
 
-        let email = Message::builder()
-            .from(from_address.into())
-            .to(to_address.into())
-            .subject(subject)
-            .header(header::ContentType::TEXT_HTML)
-            .body(body.to_string())?;
+    //     let email = Message::builder()
+    //         .from(from_address.into())
+    //         .to(to_address.into())
+    //         .subject(subject)
+    //         .header(header::ContentType::TEXT_HTML)
+    //         .body(body.to_string())?;
 
-        self.smtp_transport.send(&email)?;
-        Ok(())
-    }
+    //     self.smtp_transport.send(&email)?;
+    //     Ok(())
+    // }
 
     pub fn send_reset_password_email(
         &self,

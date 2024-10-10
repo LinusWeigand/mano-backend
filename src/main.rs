@@ -5,11 +5,12 @@ mod route;
 mod schema;
 mod utils;
 
+use axum::extract::DefaultBodyLimit;
 use dotenv::dotenv;
 use email::EmailManager;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::{env, process::exit, sync::Arc};
-use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::limit::{RequestBodyLimit, RequestBodyLimitLayer};
 
 pub struct AppState {
     db: Pool<Postgres>,
@@ -54,7 +55,7 @@ async fn main() {
         email_manager: email_manager.clone(),
         url,
     }))
-    .layer(RequestBodyLimitLayer::new(40 * 1024 * 1024));
+    .layer(DefaultBodyLimit::max(40 * 1024 * 1024));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

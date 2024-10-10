@@ -1,8 +1,8 @@
 use axum::{
     extract::{Path, State},
     http::{
-        header::{self, SET_COOKIE},
-        HeaderMap, StatusCode,
+        header::{self},
+        StatusCode,
     },
     response::IntoResponse,
     Json,

@@ -80,3 +80,32 @@ pub struct ProfileModel {
     #[serde(rename = "updatedAt")]
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct PhotoModel {
+    pub id: Uuid,
+    pub file_name: String,
+    pub content_type: String,
+    pub photo_data: Vec<u8>,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct PhotoMetadataModel {
+    pub id: Uuid,
+    // pub profile_id: Uuid,
+    pub file_name: String,
+    pub content_type: String,
+}
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct PhotoDataModel {
+    pub file_name: String,
+    pub content_type: String,
+    // pub profile_id: Uuid,
+    pub photo_data: Vec<u8>,
+}
