@@ -20,84 +20,6 @@ use crate::{
     AppState,
 };
 
-pub async fn create_profile2(
-    State(data): State<Arc<AppState>>,
-    Json(body): Json<CreateProfilSchema>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    println!("create_profile");
-
-    let query_result = sqlx::query_as!(
-        ViewerModel,
-        "SELECT * FROM viewers WHERE email = $1",
-        &body.email,
-    )
-    .fetch_one(&data.db)
-    .await;
-
-    if let Err(e) = query_result {
-        println!("create_profile: fail: get viewer_id from email: {:?}", e);
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "fail",
-                "message": "Internal Server Error"
-            })),
-        ));
-    }
-    let viewer_id = query_result.unwrap().id;
-
-    let query_result = sqlx::query_as!(
-        ProfileModel,
-        r#"
-        INSERT INTO profiles (
-            viewer_id, name, craft, location, website, instagram, skills, bio, experience
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING *;
-        "#,
-        viewer_id,
-        body.name,
-        body.craft,
-        body.location,
-        body.website,
-        body.instagram,
-        &body.skills,
-        body.bio,
-        body.experience,
-    )
-    .fetch_one(&data.db)
-    .await;
-
-    if let Err(e) = query_result {
-        if e.to_string()
-            .contains("duplicate key value violates unique constraint")
-        {
-            let error_response = serde_json::json!({
-                "status": "fail",
-                "message": "Profile with the provided details already exists",
-            });
-            println!("create_profile_handler: POST failed: duplicate key");
-            return Err((StatusCode::CONFLICT, Json(error_response)));
-        }
-        println!("create_profile_handler: POST failed: {:?}", e);
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": "Internal Server Error"
-            })),
-        ));
-    }
-
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "message": "Profil erstellt."
-        })),
-    ))
-}
-
 pub async fn create_profile(
     State(data): State<Arc<AppState>>,
     mut multipart: Multipart,
@@ -124,7 +46,7 @@ pub async fn create_profile(
             })),
         )
     })? {
-        let field_name = field.file_name().unwrap_or("").to_string();
+        let field_name = field.name().unwrap_or("").to_string();
 
         if let Some(content_type) = field.content_type() {
             //This is a file field
@@ -334,26 +256,27 @@ pub async fn create_profile(
     ))
 }
 
-pub async fn get_photos(
+pub async fn get_profiles(
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let photos = sqlx::query_as!(
-        PhotoModel,
-        "SELECT id, file_name, content_type, photo_data, created_at FROM photos"
-    )
-    .fetch_all(&data.db)
-    .await
-    .map_err(|e| {
-        eprintln!("get_photos: {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "fail",
-                "message": "Internal Server Error"
-            })),
-        )
-    })?;
-    Ok(())
+    let profiles = sqlx::query_as!(ProfileModel, "SELECT * FROM profiles")
+        .fetch_all(&data.db)
+        .await
+        .map_err(|e| {
+            eprintln!("get_profiles: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "fail",
+                    "message": "Internal Server Error"
+                })),
+            )
+        })?;
+
+    Ok(Json(json!({
+        "status": "success",
+        "data": profiles
+    })))
 }
 
 pub async fn get_photo_metadata(
@@ -424,4 +347,40 @@ pub async fn get_photo(
         ),
     ];
     Ok((headers, photo.photo_data))
+}
+
+pub async fn get_photos_of_profile(
+    State(data): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let rows = sqlx::query!(
+        r#"
+            SELECT 
+                photos.id
+            FROM 
+                photos
+            WHERE 
+                photos.profile_id = $1;
+        "#,
+        id
+    )
+    .fetch_all(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("get_photos_by_profile: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+
+    let photo_urls: Vec<String> = rows
+        .iter()
+        .map(|row| format!("{}/api/photos/{}", &data.url, row.id))
+        .collect();
+
+    Ok(Json(json!({ "status": "success", "data": photo_urls })))
 }
