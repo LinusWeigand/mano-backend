@@ -73,3 +73,9 @@ pub struct CreateProfilSchema {
     pub experience: i16,
     // pub portfolio: Vec<Vec<String>>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SearchSchema {
+    pub craft: String,
+    pub location: String,
+}

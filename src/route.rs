@@ -7,8 +7,8 @@ use crate::{
         },
         profile::{
             create_profile, get_photo, get_photo_metadata, get_photos_of_profile, get_profiles,
+            get_profiles_by_search,
         },
-        // profile::create_profile,
     },
     AppState,
 };
@@ -30,6 +30,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/api/viewers", get(viewer_list_handler))
         .route("/api/profiles", get(get_profiles))
         .route("/api/profile", post(create_profile))
+        .route("/api/search", post(get_profiles_by_search))
         .route("/api/photos", get(get_photo_metadata))
         .route("/api/photos/:id", get(get_photo))
         .route("/api/profile-photos/:id", get(get_photos_of_profile))

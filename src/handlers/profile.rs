@@ -12,11 +12,12 @@ use axum::{
 use base64::decode;
 use lettre::message::Body;
 use serde_json::json;
+use sqlx::QueryBuilder;
 use uuid::Uuid;
 
 use crate::{
     model::{PhotoDataModel, PhotoMetadataModel, PhotoModel, ProfileModel, ViewerModel},
-    schema::CreateProfilSchema,
+    schema::{CreateProfilSchema, SearchSchema},
     AppState,
 };
 
@@ -272,6 +273,60 @@ pub async fn get_profiles(
                 })),
             )
         })?;
+
+    Ok(Json(json!({
+        "status": "success",
+        "data": profiles
+    })))
+}
+
+pub async fn get_profiles_by_search(
+    State(data): State<Arc<AppState>>,
+    Json(body): Json<SearchSchema>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    println!("get_profiles_by_search");
+
+    let mut query_builder = QueryBuilder::new("SELECT * FROM profiles WHERE ");
+    let mut has_condition = false;
+
+    if !body.craft.trim().is_empty() {
+        query_builder.push("TRIM(craft) = ");
+        query_builder.push_bind(body.craft.trim());
+        has_condition = true;
+    }
+
+    if !body.location.trim().is_empty() {
+        if has_condition {
+            query_builder.push(" AND ");
+        }
+        query_builder.push("TRIM(location) = ");
+        query_builder.push_bind(body.location.trim());
+        has_condition = true;
+    }
+
+    if !has_condition {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "status": "fail",
+                "message": "At least one search field must be provided"
+            })),
+        ));
+    }
+
+    let query = query_builder.build_query_as::<ProfileModel>();
+
+    let profiles = query.fetch_all(&data.db).await.map_err(|e| {
+        eprintln!("get_profiles_by_search : {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+    println!("got profiles: {:?}", profiles);
 
     Ok(Json(json!({
         "status": "success",

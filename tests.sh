@@ -60,3 +60,5 @@ curl -X POST http://localhost/api/profile \
   "portfolio_bio": "Here is my portfolio showcasing my recent work."
 }'
 
+
+curl -X POST http://localhost/api/search -H "Content-Type: application/json" -d '{"craft": "Zimmerei", "location": "Nürnberg"}'
