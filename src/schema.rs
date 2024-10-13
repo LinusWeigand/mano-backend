@@ -71,7 +71,8 @@ pub struct CreateProfilSchema {
     pub skills: Vec<String>,
     pub bio: String,
     pub experience: i16,
-    // pub portfolio: Vec<Vec<String>>,
+    pub google_rating: Option<String>,
+    pub myhammer_rating: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

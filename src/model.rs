@@ -66,6 +66,7 @@ pub struct ResetPasswordModel {
 pub struct ProfileModel {
     pub id: Uuid,
     pub viewer_id: Uuid,
+    pub google_ratings: Option<String>,
     pub name: String,
     pub craft: String,
     pub location: String,

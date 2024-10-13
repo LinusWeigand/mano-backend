@@ -35,6 +35,7 @@ pub async fn create_profile(
     let mut skills: Option<Vec<String>> = None;
     let mut bio: Option<String> = None;
     let mut experience: Option<i16> = None;
+    let mut google_ratings: Option<String> = None;
     let mut photos = Vec::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
@@ -105,6 +106,7 @@ pub async fn create_profile(
                 "craft" => craft = Some(text),
                 "location" => location = Some(text),
                 "website" => website = Some(text),
+                "google_rating" => google_ratings = Some(text),
                 "instagram" => instagram = Some(text),
                 "skills" => {
                     // Parse skills as a JSON array
@@ -149,6 +151,7 @@ pub async fn create_profile(
     let craft = craft.unwrap_or_default();
     let location = location.unwrap_or_default();
     let website = website.unwrap_or_default();
+    let google_ratings = google_ratings.unwrap_or_default();
     let instagram = instagram.unwrap_or_default();
     let skills = skills.unwrap_or_default();
     let bio = bio.unwrap_or_default();
@@ -178,9 +181,9 @@ pub async fn create_profile(
     let query = sqlx::query!(
         r#"
         INSERT INTO profiles (
-            viewer_id, name, craft, location, website, instagram, skills, bio, experience
+            viewer_id, name, craft, location, website, google_ratings , instagram, skills, bio, experience
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id;
         "#,
         viewer_id,
@@ -188,6 +191,7 @@ pub async fn create_profile(
         craft,
         location,
         website,
+        google_ratings,
         instagram,
         &skills,
         bio,
