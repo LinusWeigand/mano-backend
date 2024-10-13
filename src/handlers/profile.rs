@@ -106,7 +106,7 @@ pub async fn create_profile(
                 "craft" => craft = Some(text),
                 "location" => location = Some(text),
                 "website" => website = Some(text),
-                "google_rating" => google_ratings = Some(text),
+                "google_ratings" => google_ratings = Some(text),
                 "instagram" => instagram = Some(text),
                 "skills" => {
                     // Parse skills as a JSON array
