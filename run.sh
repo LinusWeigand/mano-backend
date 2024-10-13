@@ -1,3 +1,5 @@
+docker-compose up -d
+
 git reset --hard
 
 git pull
