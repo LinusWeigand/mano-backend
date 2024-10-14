@@ -6,8 +6,8 @@ use crate::{
             health_checker_handler, viewer_list_handler,
         },
         profile::{
-            create_profile, get_photo, get_photo_metadata, get_photos_of_profile, get_profiles,
-            get_profiles_by_search,
+            create_profile, delete_profile, get_photo, get_photo_metadata, get_photos_of_profile,
+            get_profile, get_profiles, get_profiles_by_search, update_profile,
         },
     },
     AppState,
@@ -29,6 +29,12 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/api/register", post(register))
         .route("/api/viewers", get(viewer_list_handler))
         .route("/api/profiles", get(get_profiles))
+        .route(
+            "/api/profiles/:id",
+            get(get_profile)
+                .delete(delete_profile)
+                .patch(update_profile),
+        )
         .route("/api/profile", post(create_profile))
         .route("/api/search", post(get_profiles_by_search))
         .route("/api/photos", get(get_photo_metadata))

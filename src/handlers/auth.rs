@@ -1,14 +1,18 @@
 use axum::{
-    extract::{Path, State},
+    async_trait,
+    extract::{FromRef, FromRequestParts, Path, State},
     http::{
         header::{self},
-        StatusCode,
+        request::Parts,
+        HeaderMap, StatusCode,
     },
     response::IntoResponse,
     Json,
 };
+use axum_extra::{extract::CookieJar, TypedHeader};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use sqlx::query;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -247,10 +251,13 @@ pub async fn login(
     hasher.update(salted.as_bytes());
     let hashed_session_token = hex::encode(hasher.finalize());
 
+    println!("login: session_token: {}", session_token);
     // Create Session Token
+    let session_id = Uuid::new_v4();
     let query_result = sqlx::query_as!(
         UserSessionModel,
-        "INSERT INTO user_sessions (viewer_id, hashed_session_token, salt) VALUES ($1, $2, $3) RETURNING *",
+        "INSERT INTO user_sessions (id, viewer_id, hashed_session_token, salt) VALUES ($1, $2, $3, $4) RETURNING *",
+        &session_id,
         &viewer.id,
         &hashed_session_token,
         &salt,
@@ -266,23 +273,27 @@ pub async fn login(
     }
 
     // Set the session token as an HTTP-only cookie
-    let cookie = format!(
+    let session_token_cookie = format!(
         "session_token={}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={}",
         session_token,
         60 * 60 * 24 * 7 // 1 week in seconds
     );
+
+    let session_id_cookie = format!(
+        "session_id={}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={}",
+        session_id,
+        60 * 60 * 24 * 7 // 1 week in seconds
+    );
+    let mut headers = axum::http::HeaderMap::new();
+    headers.append(header::SET_COOKIE, session_token_cookie.parse().unwrap());
+    headers.append(header::SET_COOKIE, session_id_cookie.parse().unwrap());
 
     let response = json!({
         "status": "success",
         "data": "User logged in."
     });
     println!("Login successful.");
-    Ok((
-        StatusCode::OK,
-        [(header::SET_COOKIE, cookie)],
-        Json(response),
-    )
-        .into_response())
+    Ok((StatusCode::OK, headers, Json(response)).into_response())
 }
 
 pub async fn pre_reset_password(
@@ -491,5 +502,136 @@ pub async fn get_viewer(
             println!("get_viewer: viewer not found.");
             Err((StatusCode::NOT_FOUND, Json(error_response)))
         }
+    }
+}
+
+pub struct AuthenticatedViewer {
+    pub viewer_id: Uuid,
+    pub is_admin: bool,
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for AuthenticatedViewer
+where
+    Arc<AppState>: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, Json<serde_json::Value>);
+
+    async fn from_request_parts(parts: &mut Parts, data: &S) -> Result<Self, Self::Rejection> {
+        let data = Arc::from_ref(data);
+
+        let jar = CookieJar::from_request_parts(parts, &data)
+            .await
+            .map_err(|e| {
+                println!("verify user fail: {:?}", e);
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!( {
+                                "status": "fail",
+                                "message": "Unauthorized - Missing cookies."
+                    })),
+                )
+            })?;
+
+        let session_token = jar.get("session_token");
+        if session_token.is_none() {
+            println!("verify user fail: no session token found in cookie");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "fail",
+                    "message": "Unauthorized - Missing session token."
+                })),
+            ));
+        }
+        let session_token = session_token.unwrap().value();
+
+        let session_id = jar.get("session_id");
+        if session_id.is_none() {
+            println!("verify user fail: no session id found in cookie");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "fail",
+                    "message": "Unauthorized - Missing session id."
+                })),
+            ));
+        }
+        let session_id = session_id.unwrap().value();
+        let session_id = match Uuid::parse_str(session_id) {
+            Ok(id) => id,
+            Err(_) => {
+                println!("verify user fail: session_id in cookie not a uuid");
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({
+                        "status": "fail",
+                        "message": "Invalid session ID."
+                    })),
+                ));
+            }
+        };
+
+        let query = sqlx::query!(
+            "SELECT viewer_id, salt, hashed_session_token FROM user_sessions WHERE id = $1",
+            session_id
+        )
+        .fetch_one(&data.db)
+        .await
+        .map_err(|e| {
+            println!(
+                "verify user fail no user_session with session_id: {} found. {:?}",
+                &session_id, e
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!( {
+                    "status": "fail",
+                    "message": "Unauthorized - No session token found."
+                })),
+            )
+        })?;
+        let viewer_id = query.viewer_id;
+        let salted = format!("{}{}", session_token, query.salt);
+        let mut hasher = Sha256::new();
+        hasher.update(salted.as_bytes());
+        let hashed_session_token = hex::encode(hasher.finalize());
+
+        if hashed_session_token != query.hashed_session_token {
+            println!("verify user fail: session token do not match");
+            println!("session_token_cookie: {}", session_token);
+            println!("hashed_session_token_cookie: {}", hashed_session_token);
+            println!("hashed_session_token_db: {}", query.hashed_session_token);
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "fail",
+                    "message": "session token do not match"
+                })),
+            ));
+        }
+
+        let query = sqlx::query!("SELECT is_admin FROM viewers WHERE id = $1", &viewer_id)
+            .fetch_one(&data.db)
+            .await
+            .map_err(|e| {
+                println!(
+                    "verify user fail no viewer with viewer_id: {} found. {:?}",
+                    &viewer_id, e
+                );
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!( {
+                            "status": "fail",
+                            "message": "Unauthorized - No user found."
+                    })),
+                )
+            })?;
+
+        Ok(AuthenticatedViewer {
+            viewer_id,
+            is_admin: query.is_admin,
+        })
     }
 }

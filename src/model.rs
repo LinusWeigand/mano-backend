@@ -12,6 +12,7 @@ pub struct ViewerModel {
     pub hashed: String,
     pub salt: String,
     pub verified: bool,
+    pub is_admin: bool,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(rename = "updatedAt")]
@@ -80,6 +81,20 @@ pub struct ProfileModel {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(rename = "updatedAt")]
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct ProfileUpdateModel {
+    pub google_ratings: Option<String>,
+    pub name: Option<String>,
+    pub craft: Option<String>,
+    pub location: Option<String>,
+    pub website: Option<String>,
+    pub instagram: Option<String>,
+    pub skills: Option<Vec<String>>,
+    pub bio: Option<String>,
+    pub experience: Option<i16>,
 }
 
 #[derive(Debug, FromRow, Deserialize, Serialize)]

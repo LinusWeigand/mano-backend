@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE
     IF NOT EXISTS profiles (
         id UUID PRIMARY KEY NOT NULL DEFAULT (uuid_generate_v4()),
-        viewer_id UUID REFERENCES viewers(id) ON DELETE CASCADE,
+        viewer_id UUID REFERENCES viewers(id) ON DELETE CASCADE NOT NULL,
         name VARCHAR(100) NOT NULL,
         craft VARCHAR(100) NOT NULL,
         location VARCHAR(100) NOT NULL,
