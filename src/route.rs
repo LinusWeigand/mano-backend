@@ -8,7 +8,7 @@ use crate::{
         profile::{
             create_profile, delete_profile, get_photo, get_photo_metadata, get_photos_of_profile,
             get_profile, get_profiles, get_profiles_by_search, update_profile,
-        }, skill::get_skills,
+        }, skill::{get_crafts, get_skills},
     },
     AppState,
 };
@@ -37,6 +37,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/api/auth/status", get(auth_status))
         .route("/api/auth/logout", get(logout))
         .route("/api/skills", get(get_skills))
+        .route("/api/crafts", get(get_crafts))
         .route(
             "/api/profiles/:id",
             get(get_profile)

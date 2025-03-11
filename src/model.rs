@@ -130,3 +130,9 @@ pub struct PhotoDataModel {
 pub struct SkillModel {
     pub name: String,
 }
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct CraftModel {
+    pub name: String,
+}
