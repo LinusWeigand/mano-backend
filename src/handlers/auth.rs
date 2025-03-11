@@ -4,25 +4,121 @@ use axum::{
     http::{
         header::{self},
         request::Parts,
-        HeaderMap, StatusCode,
+        StatusCode,
     },
     response::IntoResponse,
     Json,
 };
-use axum_extra::{extract::CookieJar, TypedHeader};
+use axum_extra::extract::CookieJar;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::query;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    model::{PreRegisteredModel, ResetPasswordModel, UserSessionModel, ViewerModel},
+    model::{PreRegisteredModel, ResetPasswordModel, ViewerModel},
     schema::{
         LoginSchema, PreRegisterSchema, PreResetPasswordSchema, RegisterSchema, ResetPasswordSchema,
     },
-    AppState,
+    utils, AppState,
 };
+
+pub async fn auth_status(
+    State(data): State<Arc<AppState>>,
+    AuthenticatedViewer {
+        viewer_id,
+        is_admin,
+    }: AuthenticatedViewer,
+) -> impl IntoResponse {
+    let email = match sqlx::query_as!(
+        ViewerModel,
+        "SELECT * FROM viewers WHERE id = $1",
+        viewer_id
+    )
+    .fetch_one(&data.db)
+    .await
+    {
+        Ok(v) => v.email,
+        Err(e) => {
+            let error_response = json!({
+                "status": "error",
+                "message": format!("{:?}", e)
+            });
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+        }
+    };
+
+    let has_profile = match sqlx::query!(
+        "SELECT id FROM profiles WHERE viewer_id = $1 LIMIT 1",
+        viewer_id
+    )
+    .fetch_optional(&data.db)
+    .await
+    {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => {
+            let error_response = json!({
+                "status": "error",
+                "message": format!("{:?}", e)
+            });
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+        }
+    };
+
+
+    Ok(Json(json!({
+        "isLoggedIn": true,
+        "hasProfile": has_profile,
+        "email": email,
+    })))
+}
+
+pub async fn logout(
+    State(data): State<Arc<AppState>>,
+    AuthenticatedViewer {
+        viewer_id,
+        is_admin,
+    }: AuthenticatedViewer,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // Clear cookies
+    let session_token_cookie =
+        "session_token=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
+    let session_id_cookie = "session_id=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
+
+    let mut headers = axum::http::HeaderMap::new();
+    headers.append(header::SET_COOKIE, session_token_cookie.parse().unwrap());
+    headers.append(header::SET_COOKIE, session_id_cookie.parse().unwrap());
+
+    let rows_affected =
+        match sqlx::query!("DELETE FROM user_sessions WHERE viewer_id = $1", viewer_id)
+            .execute(&data.db)
+            .await
+        {
+            Ok(v) => v.rows_affected(),
+            Err(e) => {
+                return Ok(Json(json!({
+                    "status": "fail",
+                    "message": "No session found"
+                }))
+                .into_response());
+            }
+        };
+
+    if rows_affected == 0 {
+        return Ok(Json(json!({
+            "status": "fail",
+            "message": "No session found"
+        }))
+        .into_response());
+    }
+
+    Ok(Json(json!({
+        "status": "success",
+        "message": "Logged out successfully"
+    }))
+    .into_response())
+}
 
 pub async fn pre_register(
     State(data): State<Arc<AppState>>,
@@ -62,7 +158,7 @@ pub async fn pre_register(
             "status": "error",
             "message": format!("{:?}", e)
         });
-        println!("Pre_register: POST fail: duplicate key");
+        println!("Pre_register: POST fail");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
@@ -140,6 +236,7 @@ pub async fn register(
     }
 
     let pre_registered_entry = query_result.unwrap();
+    let viewer_id = &pre_registered_entry.viewer_id;
     let salted = format!("{}{}", body.verification_code, pre_registered_entry.salt);
     let mut hasher = Sha256::new();
     hasher.update(salted.as_bytes());
@@ -199,12 +296,7 @@ pub async fn register(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 
-    let response = json!({
-        "status": "success",
-        "message": "User verified"
-    });
-
-    Ok((StatusCode::OK, Json(response)))
+    utils::log_user_in(viewer_id, data).await
 }
 
 pub async fn login(
@@ -244,56 +336,7 @@ pub async fn login(
         return Err((StatusCode::FORBIDDEN, Json(error_response)));
     }
 
-    let session_token = Uuid::new_v4();
-    let salt = Uuid::new_v4().to_string();
-    let salted = format!("{}{}", session_token, salt);
-    let mut hasher = Sha256::new();
-    hasher.update(salted.as_bytes());
-    let hashed_session_token = hex::encode(hasher.finalize());
-
-    println!("login: session_token: {}", session_token);
-    // Create Session Token
-    let session_id = Uuid::new_v4();
-    let query_result = sqlx::query_as!(
-        UserSessionModel,
-        "INSERT INTO user_sessions (id, viewer_id, hashed_session_token, salt) VALUES ($1, $2, $3, $4) RETURNING *",
-        &session_id,
-        &viewer.id,
-        &hashed_session_token,
-        &salt,
-    ).fetch_one(&data.db).await;
-
-    if let Err(_) = query_result {
-        let error_response = json!({
-            "status": "fail",
-            "message": "Internal Server Error."
-        });
-        println!("login: fail: creating session token.");
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
-    }
-
-    // Set the session token as an HTTP-only cookie
-    let session_token_cookie = format!(
-        "session_token={}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={}",
-        session_token,
-        60 * 60 * 24 * 7 // 1 week in seconds
-    );
-
-    let session_id_cookie = format!(
-        "session_id={}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={}",
-        session_id,
-        60 * 60 * 24 * 7 // 1 week in seconds
-    );
-    let mut headers = axum::http::HeaderMap::new();
-    headers.append(header::SET_COOKIE, session_token_cookie.parse().unwrap());
-    headers.append(header::SET_COOKIE, session_id_cookie.parse().unwrap());
-
-    let response = json!({
-        "status": "success",
-        "data": "User logged in."
-    });
-    println!("Login successful.");
-    Ok((StatusCode::OK, headers, Json(response)).into_response())
+    utils::log_user_in(&viewer.id, data).await
 }
 
 pub async fn pre_reset_password(

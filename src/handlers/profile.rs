@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Multipart, Path, Request, State},
+    extract::{Multipart, Path, State},
     http::{
         header::{CONTENT_DISPOSITION, CONTENT_TYPE},
         StatusCode,
@@ -9,18 +9,13 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use base64::decode;
-use lettre::message::Body;
 use serde_json::json;
 use sqlx::QueryBuilder;
-use uuid::{timestamp::UUID_TICKS_BETWEEN_EPOCHS, Uuid};
+use uuid::Uuid;
 
 use crate::{
-    model::{
-        PhotoDataModel, PhotoMetadataModel, PhotoModel, ProfileModel, ProfileUpdateModel,
-        ViewerModel,
-    },
-    schema::{CreateProfilSchema, SearchSchema},
+    model::{PhotoDataModel, PhotoMetadataModel, ProfileModel},
+    schema::SearchSchema,
     AppState,
 };
 
@@ -42,7 +37,7 @@ pub async fn create_profile(
             .fetch_all(&data.db)
             .await
             .map_err(|e| {
-                eprintln!("create_profile: {:?}", e);
+                eprintln!("create_profile error: {:?}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({
@@ -62,6 +57,8 @@ pub async fn create_profile(
         }
     }
 
+    println!("No conflicting profiles...");
+
     let mut name: Option<String> = None;
     let mut craft: Option<String> = None;
     let mut location: Option<String> = None;
@@ -69,12 +66,12 @@ pub async fn create_profile(
     let mut instagram: Option<String> = None;
     let mut skills: Option<Vec<String>> = None;
     let mut bio: Option<String> = None;
-    let mut experience: Option<i16> = None;
+    let mut experience: Option<i32> = None;
     let mut google_ratings: Option<String> = None;
     let mut photos = Vec::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
-        eprintln!("create_profile fail : {:?}", e);
+        eprintln!("create_profile Some fields error : {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
@@ -156,7 +153,7 @@ pub async fn create_profile(
                 }
                 "bio" => bio = Some(text),
                 "experience" => {
-                    let exp: i16 = text.parse().map_err(|e| {
+                    let exp: i32 = text.parse().map_err(|e| {
                         eprintln!("Error parsing experience: {:?}", e);
                         (
                             StatusCode::BAD_REQUEST,
@@ -192,12 +189,12 @@ pub async fn create_profile(
     let bio = bio.unwrap_or_default();
     let experience = experience.unwrap_or_default();
 
-    let query = sqlx::query!(
+    let profile = sqlx::query!(
         r#"
         INSERT INTO profiles (
-            viewer_id, name, craft, location, website, google_ratings , instagram, skills, bio, experience
+            viewer_id, name, craft, location, website, google_ratings, instagram, bio, experience
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id;
         "#,
         viewer_id,
@@ -207,7 +204,6 @@ pub async fn create_profile(
         website,
         google_ratings,
         instagram,
-        &skills,
         bio,
         experience
     )
@@ -220,8 +216,64 @@ pub async fn create_profile(
             Json(json!({ "status": "error", "message": "Internal Server Error" })),
         )
     })?;
+    let profile_id = profile.id;
 
-    let profile_id = query.id;
+    println!("Inserting skills...");
+
+    // Insert Skills
+    if !skills.is_empty() {
+        let skill_ids = sqlx::query!(
+            "SELECT id, name FROM skills WHERE name = ANY($1)",
+            &skills
+        )
+        .fetch_all(&data.db)
+        .await
+        .map_err(|e| {
+            eprintln!("Error retrieving skill IDs: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "status": "error", "message": "Internal Server Error" })),
+            )
+        })?;
+
+        // Ensure that all provided skill names exist in the database
+        let found_skill_names: Vec<String> = skill_ids.iter().map(|s| s.name.clone()).collect();
+        let missing_skills: Vec<String> = skills
+            .iter()
+            .filter(|s| !found_skill_names.contains(s))
+            .cloned()
+            .collect();
+
+        if !missing_skills.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "status": "fail",
+                    "message": "Some skills are not recognized",
+                    "missing_skills": missing_skills
+                })),
+            ));
+        }
+
+        // Insert skill associations into profile_skill
+        for skill in skill_ids {
+            sqlx::query!(
+                "INSERT INTO profile_skill (profile_id, skill_id) VALUES ($1, $2)",
+                profile_id,
+                skill.id
+            )
+            .execute(&data.db)
+            .await
+            .map_err(|e| {
+                eprintln!("Error inserting into profile_skill: {:?}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "status": "error", "message": "Internal Server Error" })),
+                )
+            })?;
+        }
+    }
+
 
     let mut num_photos_inserted = 0;
     let mut num_duplicates = 0;
@@ -275,26 +327,123 @@ pub async fn create_profile(
     ))
 }
 
+
+pub async fn get_profile(
+    State(data): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let query = sqlx::query!(
+        r#"
+        SELECT p.*, 
+            COALESCE(
+                json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
+            ) AS skills
+        FROM profiles p
+        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
+        LEFT JOIN skills s ON ps.skill_id = s.id
+        WHERE p.id = $1
+        GROUP BY p.id
+        "#,
+        id
+    )
+    .fetch_one(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("get_profile error: {:?}", e);
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "fail",
+                "message": "Profile not found"
+            })),
+        )
+    })?;
+
+    let skills: Vec<String> = query
+        .skills
+        .as_ref()
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "data": {
+                "profile": {
+                    "id": query.id,
+                    "viewer_id": query.viewer_id,
+                    "name": query.name,
+                    "craft": query.craft,
+                    "location": query.location,
+                    "website": query.website,
+                    "google_ratings": query.google_ratings,
+                    "instagram": query.instagram,
+                    "bio": query.bio,
+                    "experience": query.experience,
+                    "skills": skills 
+                }
+            }
+        })),
+    ))
+}
+
 pub async fn get_profiles(
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let profiles = sqlx::query_as!(ProfileModel, "SELECT * FROM profiles")
-        .fetch_all(&data.db)
-        .await
-        .map_err(|e| {
-            eprintln!("get_profiles: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "fail",
-                    "message": "Internal Server Error"
-                })),
-            )
-        })?;
+    let profiles = sqlx::query!(
+        r#"
+        SELECT p.*, 
+            COALESCE(
+                json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
+            ) AS skills
+        FROM profiles p
+        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
+        LEFT JOIN skills s ON ps.skill_id = s.id
+        GROUP BY p.id
+        "#
+    )
+    .fetch_all(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("get_profiles error: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+
+    let profiles_json: Vec<serde_json::Value> = profiles
+        .iter()
+        .map(|p| {
+            let skills: Vec<String> = p
+                .skills
+                .as_ref()
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+
+            json!({
+                "id": p.id,
+                "viewer_id": p.viewer_id,
+                "name": p.name,
+                "craft": p.craft,
+                "location": p.location,
+                "website": p.website,
+                "google_ratings": p.google_ratings,
+                "instagram": p.instagram,
+                "bio": p.bio,
+                "experience": p.experience,
+                "skills": skills
+            })
+        })
+        .collect();
 
     Ok(Json(json!({
         "status": "success",
-        "data": profiles
+        "data": profiles_json
     })))
 }
 
@@ -458,30 +607,7 @@ pub async fn get_photos_of_profile(
     Ok(Json(json!({ "status": "success", "data": photo_urls })))
 }
 
-pub async fn get_profile(
-    State(data): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query = sqlx::query_as!(ProfileModel, "SELECT * FROM profiles where id = $1", &id)
-        .fetch_one(&data.db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "status": "fail",
-                    "message": "Profile not found"
-                })),
-            )
-        })?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "data": json!({"profile": query })
-        })),
-    ))
-}
+
 
 pub async fn delete_profile(
     State(data): State<Arc<AppState>>,
@@ -505,6 +631,7 @@ pub async fn delete_profile(
         .execute(&data.db)
         .await
         .map_err(|e| {
+            eprintln!("failed getting profiles corresponding to user");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -579,7 +706,7 @@ pub async fn update_profile(
     let mut instagram: Option<String> = None;
     let mut skills: Option<Vec<String>> = None;
     let mut bio: Option<String> = None;
-    let mut experience: Option<i16> = None;
+    let mut experience: Option<i32> = None;
     let mut google_ratings: Option<String> = None;
     let mut photos = Vec::new();
 
@@ -662,7 +789,7 @@ pub async fn update_profile(
                 }
                 "bio" => bio = Some(text),
                 "experience" => {
-                    let exp: i16 = text.parse().map_err(|e| {
+                    let exp: i32 = text.parse().map_err(|e| {
                         eprintln!("Error parsing experience: {:?}", e);
                         (
                             StatusCode::BAD_REQUEST,

@@ -79,4 +79,5 @@ pub struct CreateProfilSchema {
 pub struct SearchSchema {
     pub craft: String,
     pub location: String,
+    pub skill: String,
 }

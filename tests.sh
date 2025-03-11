@@ -60,3 +60,30 @@ curl -X POST http://localhost/api/profile \
 
 
 curl -X POST http://localhost/api/search -H "Content-Type: application/json" -d '{"craft": "Zimmerei", "location": "Nürnberg"}'
+
+
+curl -X POST http://localhost:8000/api/profile \
+  -b "session_token=3d20289a-e334-466e-98a4-d5dcb7632385; session_id=fec327ac-e92d-408d-9812-aba7399f8e46" \
+  -F "name=John Doe" \
+  -F "craft=Software Developer" \
+  -F "location=San Francisco" \
+  -F "website=https://johndoe.com" \
+  -F "instagram=johndoe" \
+  -F 'skills=["Küchen","Mausi"]' \
+  -F "bio=Experienced developer with a passion for building robust systems." \
+  -F "experience=7" \
+  -F "photo=@/Users/linusweigand/Pictures/emma.jpeg" \
+  -F "photo=@/Users/linusweigand/Pictures/Schafi.jpeg"
+
+curl -X POST http://localhost/api/profile \
+  -b "session_token=3d20289a-e334-466e-98a4-d5dcb7632385; session_id=fec327ac-e92d-408d-9812-aba7399f8e46" \
+  -F "name=John Doe" \
+  -F "craft=Software Developer" \
+  -F "location=San Francisco" \
+  -F "website=https://johndoe.com" \
+  -F "instagram=johndoe" \
+  -F 'skills=["Küchen","Mausi"]' \
+  -F "bio=Experienced developer with a passion for building robust systems." \
+  -F "experience=7" \
+  -F "photo=@/Users/linusweigand/Pictures/emma.jpeg" \
+  -F "photo=@/Users/linusweigand/Pictures/Schafi.jpeg"

@@ -1,4 +1,0 @@
--- Add up migration script here
-
-ALTER TABLE viewers ADD COLUMN IF NOT EXISTS first_name VARCHAR(100) NOT NULL;
-ALTER TABLE viewers ADD COLUMN IF NOT EXISTS last_name VARCHAR(100) NOT NULL;

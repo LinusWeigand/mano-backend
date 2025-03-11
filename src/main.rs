@@ -10,7 +10,6 @@ use dotenv::dotenv;
 use email::EmailManager;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::{env, process::exit, sync::Arc};
-use tower_http::limit::{RequestBodyLimit, RequestBodyLimitLayer};
 
 pub struct AppState {
     db: Pool<Postgres>,

@@ -67,15 +67,14 @@ pub struct ResetPasswordModel {
 pub struct ProfileModel {
     pub id: Uuid,
     pub viewer_id: Uuid,
-    pub google_ratings: Option<String>,
     pub name: String,
     pub craft: String,
     pub location: String,
     pub website: Option<String>,
     pub instagram: Option<String>,
-    pub skills: Vec<String>,
     pub bio: String,
-    pub experience: i16,
+    pub experience: i32,
+    pub google_ratings: Option<String>,
     // pub portfolio: Vec<Vec<String>>,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -124,4 +123,10 @@ pub struct PhotoDataModel {
     pub content_type: String,
     // pub profile_id: Uuid,
     pub photo_data: Vec<u8>,
+}
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct SkillModel {
+    pub name: String,
 }
