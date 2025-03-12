@@ -590,7 +590,7 @@ pub async fn get_profiles_by_search(
 
             json!({
                 "id": row.get::<Uuid, _>("id"),
-                "viewer_id": row.get::<Uuid, _>("viewer_id"),
+                "viewer_id": row.get::<Option<Uuid>, _>("viewer_id"),
                 "name": row.get::<String, _>("name"),
                 "craft": row.get::<String, _>("craft"),
                 "location": row.get::<String, _>("location"),
