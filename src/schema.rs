@@ -77,6 +77,7 @@ pub struct CreateProfilSchema {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SearchSchema {
+    pub name: String,
     pub craft: String,
     pub location: String,
     pub skill: String,

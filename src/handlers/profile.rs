@@ -60,7 +60,7 @@ pub async fn create_profile(
     println!("No conflicting profiles...");
 
     let mut name: Option<String> = None;
-    let mut craft: Option<String> = None;
+    let mut craft_id: Option<Uuid> = None;
     let mut location: Option<String> = None;
     let mut website: Option<String> = None;
     let mut instagram: Option<String> = None;
@@ -135,7 +135,33 @@ pub async fn create_profile(
 
             match field_name.as_str() {
                 "name" => name = Some(text),
-                "craft" => craft = Some(text),
+                "craft" => {
+                    let craft_result = sqlx::query!(
+                        "SELECT id FROM crafts WHERE name = $1",
+                        text
+                    )
+                    .fetch_optional(&data.db)
+                    .await
+                    .map_err(|e| {
+                        eprintln!("Error fetching craft ID: {:?}", e);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({ "status": "fail", "message": "Internal Server Error" })),
+                        )
+                    })?;
+
+                    if let Some(craft_record) = craft_result {
+                        craft_id = Some(craft_record.id);
+                    } else {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({
+                                "status": "fail",
+                                "message": "Invalid craft name"
+                            })),
+                        ));
+                    }
+                },
                 "location" => location = Some(text),
                 "website" => website = Some(text),
                 "google_ratings" => google_ratings = Some(text),
@@ -169,7 +195,7 @@ pub async fn create_profile(
         }
     }
 
-    if name.is_none() || craft.is_none() || location.is_none() {
+    if name.is_none() || craft_id.is_none() || location.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -180,7 +206,7 @@ pub async fn create_profile(
     }
 
     let name = name.unwrap_or_default();
-    let craft = craft.unwrap_or_default();
+    let craft_id = craft_id.unwrap_or_default();
     let location = location.unwrap_or_default();
     let website = website.unwrap_or_default();
     let google_ratings = google_ratings.unwrap_or_default();
@@ -192,14 +218,14 @@ pub async fn create_profile(
     let profile = sqlx::query!(
         r#"
         INSERT INTO profiles (
-            viewer_id, name, craft, location, website, google_ratings, instagram, bio, experience
+            viewer_id, name, craft_id, location, website, google_ratings, instagram, bio, experience
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id;
         "#,
         viewer_id,
         name,
-        craft,
+        craft_id,
         location,
         website,
         google_ratings,
@@ -374,7 +400,7 @@ pub async fn get_profile(
                     "id": query.id,
                     "viewer_id": query.viewer_id,
                     "name": query.name,
-                    "craft": query.craft,
+                    "craft_id": query.craft_id,
                     "location": query.location,
                     "website": query.website,
                     "google_ratings": query.google_ratings,
@@ -429,7 +455,7 @@ pub async fn get_profiles(
                 "id": p.id,
                 "viewer_id": p.viewer_id,
                 "name": p.name,
-                "craft": p.craft,
+                "craft_id": p.craft_id,
                 "location": p.location,
                 "website": p.website,
                 "google_ratings": p.google_ratings,
@@ -453,21 +479,69 @@ pub async fn get_profiles_by_search(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     println!("get_profiles_by_search");
 
-    let mut query_builder = QueryBuilder::new("SELECT * FROM profiles WHERE ");
+    let mut query_builder = QueryBuilder::new(
+        "SELECT DISTINCT profiles.* FROM profiles
+        LEFT JOIN profile_skills ON profiles.id = profile_skills.profile_id
+        LEFT JOIN skills ON profile_skills.skill_id = skills.id
+        WHERE "
+    );
+
     let mut has_condition = false;
 
-    if !body.craft.trim().is_empty() {
-        query_builder.push("TRIM(craft) = ");
-        query_builder.push_bind(body.craft.trim());
+    if let Some(name) = body.name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        query_builder.push("TRIM(profiles.name) = ");
+        query_builder.push_bind(name);
         has_condition = true;
     }
 
-    if !body.location.trim().is_empty() {
+    if let Some(craft_name) = body.craft.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        let craft_query = sqlx::query!(
+            "SELECT id FROM crafts WHERE name = $1",
+            craft_name
+        )
+        .fetch_optional(&data.db)
+        .await
+        .map_err(|e| {
+            eprintln!("Error fetching craft ID: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "status": "fail", "message": "Internal Server Error" })),
+            )
+        })?;
+
+        if let Some(craft_record) = craft_query {
+            if has_condition {
+                query_builder.push(" AND ");
+            }
+            query_builder.push("profiles.craft_id = ");
+            query_builder.push_bind(craft_record.id);
+            has_condition = true;
+        } else {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "status": "fail",
+                    "message": "Invalid craft name"
+                })),
+            ));
+        }
+    }
+
+    if let Some(location) = body.location.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         if has_condition {
             query_builder.push(" AND ");
         }
-        query_builder.push("TRIM(location) = ");
-        query_builder.push_bind(body.location.trim());
+        query_builder.push("TRIM(profiles.location) = ");
+        query_builder.push_bind(location);
+        has_condition = true;
+    }
+
+    if let Some(skill_name) = body.skill.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        if has_condition {
+            query_builder.push(" AND ");
+        }
+        query_builder.push("TRIM(skills.name) = ");
+        query_builder.push_bind(skill_name);
         has_condition = true;
     }
 
@@ -500,6 +574,7 @@ pub async fn get_profiles_by_search(
         "data": profiles
     })))
 }
+
 
 pub async fn get_photo_metadata(
     State(data): State<Arc<AppState>>,

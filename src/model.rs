@@ -68,7 +68,7 @@ pub struct ProfileModel {
     pub id: Uuid,
     pub viewer_id: Uuid,
     pub name: String,
-    pub craft: String,
+    pub craft_id: Uuid,
     pub location: String,
     pub website: Option<String>,
     pub instagram: Option<String>,
