@@ -45,7 +45,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
                 .patch(update_profile),
         )
         .route("/api/profile", post(create_profile))
-        .route("/api/search", post(get_profiles_by_search))
+        .route("/api/profiles/search", post(get_profiles_by_search))
         .route("/api/photos", get(get_photo_metadata))
         .route("/api/photos/:id", get(get_photo))
         .route("/api/profile-photos/:id", get(get_photos_of_profile))

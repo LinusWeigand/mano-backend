@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use sqlx::Row;
 
 use axum::{
     extract::{Multipart, Path, State},
@@ -354,79 +355,21 @@ pub async fn create_profile(
 }
 
 
-pub async fn get_profile(
-    State(data): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query = sqlx::query!(
-        r#"
-        SELECT p.*, 
-            COALESCE(
-                json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
-            ) AS skills
-        FROM profiles p
-        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
-        LEFT JOIN skills s ON ps.skill_id = s.id
-        WHERE p.id = $1
-        GROUP BY p.id
-        "#,
-        id
-    )
-    .fetch_one(&data.db)
-    .await
-    .map_err(|e| {
-        eprintln!("get_profile error: {:?}", e);
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "status": "fail",
-                "message": "Profile not found"
-            })),
-        )
-    })?;
-
-    let skills: Vec<String> = query
-        .skills
-        .as_ref()
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "data": {
-                "profile": {
-                    "id": query.id,
-                    "viewer_id": query.viewer_id,
-                    "name": query.name,
-                    "craft_id": query.craft_id,
-                    "location": query.location,
-                    "website": query.website,
-                    "google_ratings": query.google_ratings,
-                    "instagram": query.instagram,
-                    "bio": query.bio,
-                    "experience": query.experience,
-                    "skills": skills 
-                }
-            }
-        })),
-    ))
-}
-
 pub async fn get_profiles(
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let profiles = sqlx::query!(
         r#"
         SELECT p.*, 
+            c.name as craft_name,
             COALESCE(
                 json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
             ) AS skills
         FROM profiles p
+        LEFT JOIN crafts c ON p.craft_id = c.id
         LEFT JOIN profile_skill ps ON p.id = ps.profile_id
         LEFT JOIN skills s ON ps.skill_id = s.id
-        GROUP BY p.id
+        GROUP BY p.id, c.name
         "#
     )
     .fetch_all(&data.db)
@@ -455,7 +398,7 @@ pub async fn get_profiles(
                 "id": p.id,
                 "viewer_id": p.viewer_id,
                 "name": p.name,
-                "craft_id": p.craft_id,
+                "craft": p.craft_name,
                 "location": p.location,
                 "website": p.website,
                 "google_ratings": p.google_ratings,
@@ -467,11 +410,81 @@ pub async fn get_profiles(
         })
         .collect();
 
+    println!("profiles: {:?}", profiles_json);
+
     Ok(Json(json!({
         "status": "success",
         "data": profiles_json
     })))
 }
+
+// and
+
+pub async fn get_profile(
+    State(data): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    println!("get_profile");
+    let query = sqlx::query!(
+        r#"
+        SELECT p.*, 
+            c.name as craft_name,
+            COALESCE(
+                json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
+            ) AS skills
+        FROM profiles p
+        LEFT JOIN crafts c ON p.craft_id = c.id
+        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
+        LEFT JOIN skills s ON ps.skill_id = s.id
+        WHERE p.id = $1
+        GROUP BY p.id, c.name
+        "#,
+        id
+    )
+    .fetch_one(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("get_profile error: {:?}", e);
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "fail",
+                "message": "Profile not found"
+            })),
+        )
+    })?;
+
+    let skills: Vec<String> = query
+        .skills
+        .as_ref()
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "data": {
+                "profile": {
+                    "id": query.id,
+                    "viewer_id": query.viewer_id,
+                    "name": query.name,
+                    "craft": query.craft_name,
+                    "location": query.location,
+                    "website": query.website,
+                    "google_ratings": query.google_ratings,
+                    "instagram": query.instagram,
+                    "bio": query.bio,
+                    "experience": query.experience,
+                    "skills": skills
+                }
+            }
+        }
+    ))))
+}
+
+
 
 pub async fn get_profiles_by_search(
     State(data): State<Arc<AppState>>,
@@ -480,10 +493,17 @@ pub async fn get_profiles_by_search(
     println!("get_profiles_by_search");
 
     let mut query_builder = QueryBuilder::new(
-        "SELECT DISTINCT profiles.* FROM profiles
-        LEFT JOIN profile_skills ON profiles.id = profile_skills.profile_id
-        LEFT JOIN skills ON profile_skills.skill_id = skills.id
-        WHERE "
+        r#"
+        SELECT 
+            profiles.*,
+            crafts.name as craft,
+            COALESCE(json_agg(DISTINCT skills.name) FILTER (WHERE skills.name IS NOT NULL), '[]') AS skills
+        FROM profiles
+        LEFT JOIN crafts ON profiles.craft_id = crafts.id
+        LEFT JOIN profile_skill ON profiles.id = profile_skill.profile_id
+        LEFT JOIN skills ON profile_skill.skill_id = skills.id
+        WHERE 
+        "#,
     );
 
     let mut has_condition = false;
@@ -500,36 +520,12 @@ pub async fn get_profiles_by_search(
     if let Some(craft_name) = &body.craft {
         let trimmed_craft = craft_name.trim();
         if !trimmed_craft.is_empty() {
-            let craft_record = sqlx::query!(
-                "SELECT id FROM crafts WHERE name = $1",
-                trimmed_craft
-            )
-            .fetch_optional(&data.db)
-            .await
-            .map_err(|e| {
-                eprintln!("Error fetching craft ID: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"status":"fail","message":"Internal Server Error"})),
-                )
-            })?;
-
-            if let Some(craft_record) = craft_record {
-                if has_condition {
-                    query_builder.push(" AND ");
-                }
-                query_builder.push("profiles.craft_id = ");
-                query_builder.push_bind(craft_record.id);
-                has_condition = true;
-            } else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "status": "fail",
-                        "message": "Invalid craft name"
-                    })),
-                ));
+            if has_condition {
+                query_builder.push(" AND ");
             }
+            query_builder.push("crafts.name = ");
+            query_builder.push_bind(trimmed_craft);
+            has_condition = true;
         }
     }
 
@@ -567,26 +563,53 @@ pub async fn get_profiles_by_search(
         ));
     }
 
-    let query = query_builder.build_query_as::<ProfileModel>();
+    query_builder.push(" GROUP BY profiles.id, crafts.name");
 
-    let profiles = query.fetch_all(&data.db).await.map_err(|e| {
-        eprintln!("get_profiles_by_search : {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "fail",
-                "message": "Internal Server Error"
-            })),
-        )
-    })?;
-    println!("got profiles: {:?}", profiles);
+    let query = query_builder.build();
+
+    let profiles = query
+        .fetch_all(&data.db)
+        .await
+        .map_err(|e| {
+            eprintln!("get_profiles_by_search error: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "fail",
+                    "message": "Internal Server Error"
+                })),
+            )
+        })?;
+
+    let profiles_json: Vec<serde_json::Value> = profiles
+        .iter()
+        .map(|row| {
+            let skills: Vec<String> = serde_json::from_value(row.get::<serde_json::Value, _>("skills"))
+                .unwrap_or_default();
+
+            json!({
+                "id": row.get::<Uuid, _>("id"),
+                "viewer_id": row.get::<Uuid, _>("viewer_id"),
+                "name": row.get::<String, _>("name"),
+                "craft": row.get::<String, _>("craft"),
+                "location": row.get::<String, _>("location"),
+                "website": row.get::<Option<String>, _>("website"),
+                "google_ratings": row.get::<Option<String>, _>("google_ratings"),
+                "instagram": row.get::<Option<String>, _>("instagram"),
+                "bio": row.get::<String, _>("bio"),
+                "experience": row.get::<i32, _>("experience"),
+                "skills": skills,
+            })
+        })
+        .collect();
+
+    println!("profiles from search: {:?}", profiles_json);
 
     Ok(Json(json!({
         "status": "success",
-        "data": profiles
+        "data": profiles_json
     })))
 }
-
 
 pub async fn get_photo_metadata(
     State(data): State<Arc<AppState>>,
