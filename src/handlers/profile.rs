@@ -15,7 +15,7 @@ use sqlx::QueryBuilder;
 use uuid::Uuid;
 
 use crate::{
-    model::{PhotoDataModel, PhotoMetadataModel, ProfileModel},
+    model::{PhotoDataModel, PhotoMetadataModel},
     schema::SearchSchema,
     AppState,
 };
@@ -216,6 +216,8 @@ pub async fn create_profile(
     let bio = bio.unwrap_or_default();
     let experience = experience.unwrap_or_default();
 
+    
+
     let profile = sqlx::query!(
         r#"
         INSERT INTO profiles (
@@ -224,7 +226,7 @@ pub async fn create_profile(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id;
         "#,
-        viewer_id,
+        if is_admin { None } else { Some(viewer_id) },
         name,
         craft_id,
         location,
@@ -410,7 +412,6 @@ pub async fn get_profiles(
         })
         .collect();
 
-    println!("profiles: {:?}", profiles_json);
 
     Ok(Json(json!({
         "status": "success",
@@ -603,7 +604,6 @@ pub async fn get_profiles_by_search(
         })
         .collect();
 
-    println!("profiles from search: {:?}", profiles_json);
 
     Ok(Json(json!({
         "status": "success",
@@ -717,7 +717,132 @@ pub async fn get_photos_of_profile(
     Ok(Json(json!({ "status": "success", "data": photo_urls })))
 }
 
+pub async fn update_profile(
+    State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id, is_admin }: AuthenticatedViewer,
+    Path(profile_id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    println!("update profile");
 
+    // Fetch the profile to ensure it exists and to check permissions
+    let existing_profile = sqlx::query!(
+        "SELECT viewer_id FROM profiles WHERE id = $1",
+        profile_id
+    )
+    .fetch_optional(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("fetch profile error: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "status": "error", "message": "Internal Server Error" })),
+        )
+    })?;
+
+    let existing_profile = match existing_profile {
+        Some(profile) => profile,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({ "status": "fail", "message": "Profile not found" })),
+            ))
+        }
+    };
+
+    // Check if the user has permission to update this profile
+    if !is_admin && existing_profile.viewer_id != Some(viewer_id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "status": "fail",
+                "message": "You don't have permission to update this profile"
+            })),
+        ));
+    }
+
+    let mut query_builder = QueryBuilder::<sqlx::Postgres>::new("UPDATE profiles SET ");
+    let mut updates_made = false;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        eprintln!("multipart error: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "status": "error", "message": "Internal Server Error" })),
+        )
+    })? {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field.content_type().is_some() {
+            continue;
+        }
+
+        let text = field.text().await.map_err(|e| {
+            eprintln!("error reading field {}: {:?}", field_name, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "status": "error", "message": "Internal Server Error" })),
+            )
+        })?;
+
+        match field_name.as_str() {
+            "name" | "location" | "website" | "google_ratings" | "instagram" | "bio" => {
+                if updates_made { query_builder.push(", "); }
+                query_builder.push(format!("{} = ", field_name)).push_bind(text);
+                updates_made = true;
+            }
+            "experience" => {
+                let exp: i32 = text.parse().map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "status": "fail", "message": "Invalid experience format" })),
+                    )
+                })?;
+                if updates_made { query_builder.push(", "); }
+                query_builder.push("experience = ").push_bind(exp);
+                updates_made = true;
+            }
+            "craft" => {
+                let craft = sqlx::query!("SELECT id FROM crafts WHERE name = $1", text)
+                    .fetch_optional(&data.db)
+                    .await
+                    .map_err(|_| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({ "status": "error", "message": "Internal Server Error" })),
+                        )
+                    })?;
+
+                if let Some(craft) = craft {
+                    query_builder.push("craft_id = ").push_bind(craft.id);
+                } else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "status": "fail", "message": "Invalid craft name" })),
+                    ));
+                }
+            }
+            _ => (), // Skip unknown fields
+        }
+    }
+
+    let query = query_builder
+        .push(" WHERE id = ")
+        .push_bind(profile_id)
+        .build();
+
+    query.execute(&data.db).await.map_err(|e| {
+        eprintln!("db error: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "status": "error", "message": "Internal Server Error" })),
+        )
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "status": "success", "message": "Profile updated successfully." })),
+    ))
+}
 
 pub async fn delete_profile(
     State(data): State<Arc<AppState>>,
@@ -770,303 +895,3 @@ pub async fn delete_profile(
     ))
 }
 
-pub async fn update_profile(
-    State(data): State<Arc<AppState>>,
-    AuthenticatedViewer {
-        viewer_id,
-        is_admin,
-    }: AuthenticatedViewer,
-    Path(profile_id): Path<Uuid>,
-    mut multipart: Multipart,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    println!("update profile");
-
-    // Fetch the profile to ensure it exists and to check permissions
-    let existing_profile =
-        sqlx::query!("SELECT viewer_id FROM profiles WHERE id = $1", &profile_id)
-            .fetch_one(&data.db)
-            .await
-            .map_err(|e| {
-                eprintln!("update_profile: {:?}", e);
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({
-                        "status": "fail",
-                        "message": "Profile not found"
-                    })),
-                )
-            })?;
-
-    // Check if the user has permission to update this profile
-    if !is_admin {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({
-                "status": "fail",
-                "message": "You don't have permission to update this profile"
-            })),
-        ));
-    }
-
-    // Initialize optional fields
-    let mut name: Option<String> = None;
-    let mut craft: Option<String> = None;
-    let mut location: Option<String> = None;
-    let mut website: Option<String> = None;
-    let mut instagram: Option<String> = None;
-    let mut skills: Option<Vec<String>> = None;
-    let mut bio: Option<String> = None;
-    let mut experience: Option<i32> = None;
-    let mut google_ratings: Option<String> = None;
-    let mut photos = Vec::new();
-
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        eprintln!("update_profile fail : {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "fail",
-                "message": "Internal Server Error"
-            })),
-        )
-    })? {
-        let field_name = field.name().unwrap_or("").to_string();
-
-        if let Some(content_type) = field.content_type() {
-            // This is a file field (photo)
-            let content_type = content_type.to_string();
-
-            if !content_type.starts_with("image/") {
-                eprintln!("Unsupported media type");
-                return Err((
-                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                    Json(json!({
-                        "status": "fail",
-                        "message": "Unsupported media type"
-                    })),
-                ));
-            }
-
-            let file_name = field.file_name().unwrap_or("").to_string();
-
-            let photo_data = field.bytes().await.map_err(|e| {
-                eprintln!("update_profile: Error reading image field: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "status": "fail",
-                        "message": "Internal Server Error"
-                    })),
-                )
-            })?;
-
-            println!("File_name: {}, content_type: {}", &file_name, &content_type);
-
-            photos.push((file_name, content_type, photo_data));
-        } else {
-            // This is a text field
-            let text = field.text().await.map_err(|e| {
-                eprintln!(
-                    "update_profile: Error reading text field {}: {:?}",
-                    field_name, e
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "status": "fail",
-                        "message": "Internal Server Error"
-                    })),
-                )
-            })?;
-
-            match field_name.as_str() {
-                "name" => name = Some(text),
-                "craft" => craft = Some(text),
-                "location" => location = Some(text),
-                "website" => website = Some(text),
-                "google_ratings" => google_ratings = Some(text),
-                "instagram" => instagram = Some(text),
-                "skills" => {
-                    // Parse skills as a JSON array
-                    let skills_vec = serde_json::from_str(&text).map_err(|e| {
-                        eprintln!("Error parsing skills: {:?}", e);
-                        (
-                            StatusCode::BAD_REQUEST,
-                            Json(json!({ "status": "fail", "message": "Invalid skills format" })),
-                        )
-                    })?;
-                    skills = Some(skills_vec);
-                }
-                "bio" => bio = Some(text),
-                "experience" => {
-                    let exp: i32 = text.parse().map_err(|e| {
-                        eprintln!("Error parsing experience: {:?}", e);
-                        (
-                            StatusCode::BAD_REQUEST,
-                            Json(
-                                json!({ "status": "fail", "message": "Invalid experience format" }),
-                            ),
-                        )
-                    })?;
-                    experience = Some(exp);
-                }
-                _ => eprintln!("Unknown field: {}", field_name),
-            }
-        }
-    }
-
-    // Build the update query dynamically based on which fields are provided
-    let mut query_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE profiles SET ");
-    let mut has_updates = false;
-
-    if let Some(ref name) = name {
-        query_builder.push("name = ");
-        query_builder.push_bind(name);
-        has_updates = true;
-    }
-    if let Some(ref craft) = craft {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("craft = ");
-        query_builder.push_bind(craft);
-        has_updates = true;
-    }
-    if let Some(ref location) = location {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("location = ");
-        query_builder.push_bind(location);
-        has_updates = true;
-    }
-    if let Some(ref website) = website {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("website = ");
-        query_builder.push_bind(website);
-        has_updates = true;
-    }
-    if let Some(ref google_ratings) = google_ratings {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("google_ratings = ");
-        query_builder.push_bind(google_ratings);
-        has_updates = true;
-    }
-    if let Some(ref instagram) = instagram {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("instagram = ");
-        query_builder.push_bind(instagram);
-        has_updates = true;
-    }
-    if let Some(ref skills) = skills {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("skills = ");
-        query_builder.push_bind(skills);
-        has_updates = true;
-    }
-    if let Some(ref bio) = bio {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("bio = ");
-        query_builder.push_bind(bio);
-        has_updates = true;
-    }
-    if let Some(experience) = experience {
-        if has_updates {
-            query_builder.push(", ");
-        }
-        query_builder.push("experience = ");
-        query_builder.push_bind(experience);
-        has_updates = true;
-    }
-
-    if !has_updates {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "status": "fail",
-                "message": "No fields to update"
-            })),
-        ));
-    }
-
-    // Finish the query
-    query_builder.push(" WHERE id = ");
-    query_builder.push_bind(&profile_id);
-    query_builder.push(";");
-
-    // let query = query_builder.build_query_as::<ProfileUpdateModel>();
-    // Execute the update query
-    let result = query_builder.build().execute(&data.db).await.map_err(|e| {
-        eprintln!("Error updating profile: {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "status": "error", "message": "Internal Server Error" })),
-        )
-    })?;
-
-    if result.rows_affected() == 0 {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({ "status": "fail", "message": "Profile not found" })),
-        ));
-    }
-
-    // Handle updating photos
-    let mut num_photos_inserted = 0;
-    let num_duplicates = 0;
-
-    for (file_name, content_type, photo_data) in photos {
-        let query_result = sqlx::query!(
-            "INSERT INTO photos (
-                profile_id, file_name, content_type, photo_data
-            ) VALUES (
-                $1, $2, $3, $4
-            ) ON CONFLICT (profile_id, file_name) DO UPDATE SET
-                content_type = EXCLUDED.content_type,
-                photo_data = EXCLUDED.photo_data",
-            profile_id,
-            &file_name,
-            &content_type,
-            &photo_data.as_ref()
-        )
-        .execute(&data.db)
-        .await;
-
-        match query_result {
-            Err(e) => {
-                eprintln!("update_profile fail: insert into db: {:?}", e);
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "status": "fail", "message": "Internal Server Error" })),
-                ));
-            }
-            Ok(_) => {
-                println!("Photo inserted or updated.");
-                num_photos_inserted += 1;
-            }
-        }
-    }
-
-    println!(
-        "Photos inserted or updated: {}, Duplicates skipped: {}",
-        num_photos_inserted, num_duplicates
-    );
-
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "message": "Profile updated."
-        })),
-    ))
-}
