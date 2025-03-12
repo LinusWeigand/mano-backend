@@ -488,61 +488,73 @@ pub async fn get_profiles_by_search(
 
     let mut has_condition = false;
 
-    if let Some(name) = body.name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        query_builder.push("TRIM(profiles.name) = ");
-        query_builder.push_bind(name);
-        has_condition = true;
+    if let Some(name) = &body.name {
+        let trimmed_name = name.trim();
+        if !trimmed_name.is_empty() {
+            query_builder.push("TRIM(profiles.name) = ");
+            query_builder.push_bind(trimmed_name);
+            has_condition = true;
+        }
     }
 
-    if let Some(craft_name) = body.craft.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        let craft_query = sqlx::query!(
-            "SELECT id FROM crafts WHERE name = $1",
-            craft_name
-        )
-        .fetch_optional(&data.db)
-        .await
-        .map_err(|e| {
-            eprintln!("Error fetching craft ID: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "status": "fail", "message": "Internal Server Error" })),
+    if let Some(craft_name) = &body.craft {
+        let trimmed_craft = craft_name.trim();
+        if !trimmed_craft.is_empty() {
+            let craft_record = sqlx::query!(
+                "SELECT id FROM crafts WHERE name = $1",
+                trimmed_craft
             )
-        })?;
+            .fetch_optional(&data.db)
+            .await
+            .map_err(|e| {
+                eprintln!("Error fetching craft ID: {:?}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"status":"fail","message":"Internal Server Error"})),
+                )
+            })?;
 
-        if let Some(craft_record) = craft_query {
+            if let Some(craft_record) = craft_record {
+                if has_condition {
+                    query_builder.push(" AND ");
+                }
+                query_builder.push("profiles.craft_id = ");
+                query_builder.push_bind(craft_record.id);
+                has_condition = true;
+            } else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "status": "fail",
+                        "message": "Invalid craft name"
+                    })),
+                ));
+            }
+        }
+    }
+
+    if let Some(location) = &body.location {
+        let trimmed_location = location.trim();
+        if !trimmed_location.is_empty() {
             if has_condition {
                 query_builder.push(" AND ");
             }
-            query_builder.push("profiles.craft_id = ");
-            query_builder.push_bind(craft_record.id);
+            query_builder.push("TRIM(profiles.location) = ");
+            query_builder.push_bind(trimmed_location);
             has_condition = true;
-        } else {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "status": "fail",
-                    "message": "Invalid craft name"
-                })),
-            ));
         }
     }
 
-    if let Some(location) = body.location.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        if has_condition {
-            query_builder.push(" AND ");
+    if let Some(skill_name) = &body.skill {
+        let trimmed_skill = skill_name.trim();
+        if !trimmed_skill.is_empty() {
+            if has_condition {
+                query_builder.push(" AND ");
+            }
+            query_builder.push("TRIM(skills.name) = ");
+            query_builder.push_bind(trimmed_skill);
+            has_condition = true;
         }
-        query_builder.push("TRIM(profiles.location) = ");
-        query_builder.push_bind(location);
-        has_condition = true;
-    }
-
-    if let Some(skill_name) = body.skill.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        if has_condition {
-            query_builder.push(" AND ");
-        }
-        query_builder.push("TRIM(skills.name) = ");
-        query_builder.push_bind(skill_name);
-        has_condition = true;
     }
 
     if !has_condition {
