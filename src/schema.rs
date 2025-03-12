@@ -82,3 +82,27 @@ pub struct SearchSchema {
     pub location: Option<String>,
     pub skill: Option<String>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateCraftSchema {
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateCraftSchema {
+    pub old_name: String,
+    pub new_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateSkillSchema {
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateSkillSchema {
+    pub old_name: String,
+    pub new_name: String,
+}
+
+

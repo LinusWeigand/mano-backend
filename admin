@@ -1,0 +1,5 @@
+UPDATE viewers
+SET
+  is_admin = true
+WHERE
+  email = 'linus@couchtec.com';

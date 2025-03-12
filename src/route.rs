@@ -1,19 +1,17 @@
 use crate::{
     handlers::{
-        auth::{auth_status, get_viewer, login, logout, pre_register, pre_reset_password, register, reset_password},
-        crud::{
+        auth::{auth_status, get_viewer, login, logout, pre_register, pre_reset_password, register, reset_password}, craft::{create_craft, get_crafts, update_craft}, crud::{
             create_viewer_handler, delete_viewer_handler, edit_viewer_handler,
             health_checker_handler, viewer_list_handler,
-        },
-        profile::{
+        }, profile::{
             create_profile, delete_profile, get_photo, get_photo_metadata, get_photos_of_profile,
             get_profile, get_profiles, get_profiles_by_search, update_profile,
-        }, skill::{get_crafts, get_skills},
+        }, skill::{create_skill, get_skills, update_skill}
     },
     AppState,
 };
 use axum::{
-    routing::{get, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use std::sync::Arc;
@@ -37,7 +35,11 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/api/auth/status", get(auth_status))
         .route("/api/auth/logout", get(logout))
         .route("/api/skills", get(get_skills))
+        .route("/api/skills", post(create_skill))
+        .route("/api/skills", put(update_skill))
         .route("/api/crafts", get(get_crafts))
+        .route("/api/crafts", post(create_craft))
+        .route("/api/crafts", put(update_craft))
         .route(
             "/api/profiles/:id",
             get(get_profile)

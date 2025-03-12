@@ -4,12 +4,12 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{model::SkillModel, schema::{CreateSkillSchema, UpdateSkillSchema}, AppState};
+use crate::{model::CraftModel, schema::{CreateCraftSchema, UpdateCraftSchema}, AppState};
 
-pub async fn get_skills(
+pub async fn get_crafts(
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query = sqlx::query_as!(SkillModel, "SELECT name FROM skills")
+    let query = sqlx::query_as!(CraftModel, "SELECT name FROM crafts")
         .fetch_all(&data.db)
         .await
         .map_err(|e| {
@@ -31,13 +31,13 @@ pub async fn get_skills(
     ))
 }
 
-pub async fn create_skill(
+pub async fn create_craft(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<CreateSkillSchema>,
+    Json(body): Json<CreateCraftSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let new_skill = sqlx::query!(
+    let new_craft = sqlx::query!(
         r#"
-        INSERT INTO skills (name, version)
+        INSERT INTO crafts (name, version) 
         VALUES ($1, 1)
         RETURNING id, name;
         "#,
@@ -51,11 +51,11 @@ pub async fn create_skill(
                 StatusCode::CONFLICT,
                 Json(json!({
                     "status": "fail",
-                    "message": "Skill already exists"
+                    "message": "Craft already exists"
                 })),
             )
         } else {
-            eprintln!("Error creating skill: {:?}", e);
+            eprintln!("Error creating craft: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -71,22 +71,20 @@ pub async fn create_skill(
         Json(json!({
             "status": "success",
             "data": {
-                "id": new_skill.id,
-                "name": new_skill.name
+                "id": new_craft.id,
+                "name": new_craft.name
             }
         })),
     ))
 }
 
-
-pub async fn update_skill(
+pub async fn update_craft(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<UpdateSkillSchema>,
+    Json(body): Json<UpdateCraftSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    println!("update skill");
-    let updated_skill = sqlx::query!(
+    let updated_craft = sqlx::query!(
         r#"
-        UPDATE skills SET name = $1
+        UPDATE crafts SET name = $1
         WHERE name = $2
         RETURNING id, name;
         "#,
@@ -96,27 +94,25 @@ pub async fn update_skill(
     .fetch_optional(&data.db)
     .await
     .map_err(|e| {
-        eprintln!("Error updating skill: {:?}", e);
+        eprintln!("Error updating craft: {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "status": "error", "message": "Internal Server Error" })),
         )
     })?;
 
-    println!("query done");
-
-    if let Some(skill) = updated_skill {
+    if let Some(craft) = updated_craft {
         Ok((
             StatusCode::OK,
             Json(json!({
                 "status": "success",
-                "data": { "id": skill.id, "name": skill.name }
+                "data": { "id": craft.id, "name": craft.name }
             })),
         ))
     } else {
         Err((
             StatusCode::NOT_FOUND,
-            Json(json!({ "status": "fail", "message": "Skill with provided old name not found" })),
+            Json(json!({ "status": "fail", "message": "Craft with provided old name not found" })),
         ))
     }
 }
