@@ -66,11 +66,41 @@ pub async fn auth_status(
         }
     };
 
-
     Ok(Json(json!({
         "isLoggedIn": true,
         "hasProfile": has_profile,
         "email": email,
+    })))
+}
+
+pub async fn is_admin(
+    State(data): State<Arc<AppState>>,
+    AuthenticatedViewer {
+        viewer_id,
+        is_admin,
+    }: AuthenticatedViewer,
+) -> impl IntoResponse {
+    let email = match sqlx::query_as!(
+        ViewerModel,
+        "SELECT * FROM viewers WHERE id = $1",
+        viewer_id
+    )
+    .fetch_one(&data.db)
+    .await
+    {
+        Ok(v) => v.email,
+        Err(e) => {
+            let error_response = json!({
+                "status": "error",
+                "message": format!("{:?}", e)
+            });
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+        }
+    };
+
+    Ok(Json(json!({
+        "isLoggedIn": true,
+        "is_admin": is_admin,
     })))
 }
 
