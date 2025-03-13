@@ -70,6 +70,7 @@ pub struct CreateProfilSchema {
     pub instagram: Option<String>,
     pub skills: Vec<String>,
     pub bio: String,
+    pub register_number: String,
     pub experience: i16,
     pub google_rating: Option<String>,
     pub myhammer_rating: Option<String>,
@@ -104,5 +105,3 @@ pub struct UpdateSkillSchema {
     pub old_name: String,
     pub new_name: String,
 }
-
-

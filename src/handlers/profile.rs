@@ -72,6 +72,7 @@ pub async fn create_profile(
     let mut experience: Option<i32> = None;
     let mut location: Option<String> = None;
     let mut bio: Option<String> = None;
+    let mut register_number: Option<String> = None;
     let mut website: Option<String> = None;
     let mut instagram: Option<String> = None;
     let mut google_ratings: Option<String> = None;
@@ -181,6 +182,7 @@ pub async fn create_profile(
                 }
                 "location" => location = Some(text),
                 "bio" => bio = Some(text),
+                "register_number" => register_number = Some(text),
                 "website" => website = Some(text),
                 "instagram" => instagram = Some(text),
                 "google_ratings" => google_ratings = Some(text),
@@ -224,9 +226,9 @@ pub async fn create_profile(
     let profile = sqlx::query!(
         r#"
         INSERT INTO profiles (
-            viewer_id, name, craft_id, location, website, google_ratings, instagram, bio, experience
+            viewer_id, name, craft_id, location, website, google_ratings, instagram, bio, experience, register_number
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id;
         "#,
         if is_admin { None } else { Some(viewer_id) },
@@ -237,7 +239,8 @@ pub async fn create_profile(
         google_ratings,
         instagram,
         bio,
-        experience
+        experience,
+        register_number
     )
     .fetch_one(&data.db)
     .await
@@ -306,167 +309,126 @@ pub async fn create_profile(
     let mut num_photos_inserted = 0;
     let mut num_duplicates = 0;
 
-    // for (file_name, content_type, photo_data) in photos {
-    //     let query_result = sqlx::query!(
-    //         "INSERT INTO photos (
-    //             profile_id, file_name, content_type, photo_data
-    //         ) VALUES (
-    //             $1, $2, $3, $4
-    //         )",
-    //         profile_id,
-    //         &file_name,
-    //         &content_type,
-    //         &photo_data.as_ref()
-    //     )
-    //     .execute(&data.db)
-    //     .await;
-    //
-    //     match query_result {
-    //         Err(e) => {
-    //             if e.to_string().contains("duplicate key") {
-    //                 println!("Duplicate photo found.");
-    //                 num_duplicates += 1;
-    //                 continue;
-    //             }
-    //             eprintln!("upload_photos fail: insert into db: {:?}", e);
-    //             return Err((
-    //                 StatusCode::INTERNAL_SERVER_ERROR,
-    //                 Json(json!({ "status": "fail", "message": "Internal Server Error" })),
-    //             ));
-    //         }
-    //         Ok(_) => {
-    //             println!("Photo inserted.");
-    //             num_photos_inserted += 1;
-    //         }
-    //     }
-    // }
-    //
-
-
-
     println!("Compressing images...");
-
-
-
-for (file_name, _original_content_type, original_bytes) in photos {
-    // 1) Decode raw bytes -> DynamicImage
-    let dyn_img = match ImageReader::new(Cursor::new(&original_bytes))
-        .with_guessed_format()
-    {
-        Ok(reader) => match reader.decode() {
-            Ok(img) => img,
+    for (file_name, _original_content_type, original_bytes) in photos {
+        // 1) Decode raw bytes -> DynamicImage
+        let dyn_img = match ImageReader::new(Cursor::new(&original_bytes))
+            .with_guessed_format()
+        {
+            Ok(reader) => match reader.decode() {
+                Ok(img) => img,
+                Err(err) => {
+                    eprintln!("Failed to decode image: {:?}", err);
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "status": "fail", "message": "Invalid image data" })),
+                    ));
+                }
+            },
             Err(err) => {
-                eprintln!("Failed to decode image: {:?}", err);
+                eprintln!("Failed to guess format: {:?}", err);
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(json!({ "status": "fail", "message": "Invalid image data" })),
                 ));
             }
-        },
-        Err(err) => {
-            eprintln!("Failed to guess format: {:?}", err);
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "status": "fail", "message": "Invalid image data" })),
-            ));
-        }
-    };
+        };
 
-    // 2) Resize so that max width = 600 or max height = 600 (whichever is bigger).
-    //    This preserves the aspect ratio.
-    let (orig_w, orig_h) = dyn_img.dimensions();
-    let max_dim = 800u32;
+        // 2) Resize so that max width = 600 or max height = 600 (whichever is bigger).
+        //    This preserves the aspect ratio.
+        let (orig_w, orig_h) = dyn_img.dimensions();
+        let max_dim = 800u32;
 
-    // Compute scale factors for each dimension
-    let scale_w = max_dim as f32 / orig_w as f32; 
-    let scale_h = max_dim as f32 / orig_h as f32;
-    // We pick the smaller scale so that neither dimension exceeds 600
-    let scale = scale_w.min(scale_h).min(1.0); 
-    // If the image is already smaller than 600 in both dimensions, scale=1.0 => no resize
+        // Compute scale factors for each dimension
+        let scale_w = max_dim as f32 / orig_w as f32; 
+        let scale_h = max_dim as f32 / orig_h as f32;
+        // We pick the smaller scale so that neither dimension exceeds 600
+        let scale = scale_w.min(scale_h).min(1.0); 
+        // If the image is already smaller than 600 in both dimensions, scale=1.0 => no resize
 
-    let new_w = (orig_w as f32 * scale).round() as u32;
-    let new_h = (orig_h as f32 * scale).round() as u32;
+        let new_w = (orig_w as f32 * scale).round() as u32;
+        let new_h = (orig_h as f32 * scale).round() as u32;
 
-    let resized_img = if new_w != orig_w || new_h != orig_h {
-        dyn_img.resize_exact(new_w, new_h, FilterType::CatmullRom)
-    } else {
-        // no resize needed
-        dyn_img
-    };
+        let resized_img = if new_w != orig_w || new_h != orig_h {
+            dyn_img.resize_exact(new_w, new_h, FilterType::CatmullRom)
+        } else {
+            // no resize needed
+            dyn_img
+        };
 
-    // 3) Encode as JPEG, iterating until we get <= 200 KB or we hit minimal quality
-    let mut quality = 90;            // start quality
-    let mut compressed_bytes = Vec::new();
-    const MAX_SIZE: usize = 400_000; // 400 KB
-    const MIN_QUALITY: u8 = 10;
+        // 3) Encode as JPEG, iterating until we get <= 200 KB or we hit minimal quality
+        let mut quality = 90;            // start quality
+        let mut compressed_bytes = Vec::new();
+        const MAX_SIZE: usize = 400_000; // 400 KB
+        const MIN_QUALITY: u8 = 10;
 
-    loop {
-        compressed_bytes.clear();
+        loop {
+            compressed_bytes.clear();
 
-        // Create a JpegEncoder with the current quality
-        let mut encoder = JpegEncoder::new_with_quality(&mut compressed_bytes, quality);
+            // Create a JpegEncoder with the current quality
+            let mut encoder = JpegEncoder::new_with_quality(&mut compressed_bytes, quality);
 
-        // Encode the resized DynamicImage
-        if let Err(e) = encoder.encode_image(&resized_img) {
-            eprintln!("JPEG encode error: {:?}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "status": "fail", "message": "Failed to compress image" })),
-            ));
-        }
-
-        if compressed_bytes.len() <= MAX_SIZE {
-            // Good enough, break
-            break;
-        }
-
-        if quality <= MIN_QUALITY {
-            // We tried to get under 200 KB, but can't; accept current size
-            println!("WARNING: Could not reduce below 200 KB even at Q={}", quality);
-            break;
-        }
-
-        // Decrease quality by 5 and try again
-        quality = quality.saturating_sub(5);
-    }
-
-    // 4) Insert into DB with content_type = "image/jpeg"
-    let jpeg_content_type = "image/jpeg";
-    let query_result = sqlx::query!(
-        r#"INSERT INTO photos (profile_id, file_name, content_type, photo_data)
-           VALUES ($1, $2, $3, $4)"#,
-        profile_id,
-        &file_name,
-        jpeg_content_type,
-        &compressed_bytes
-    )
-    .execute(&data.db)
-    .await;
-
-    // 5) Error & duplicate handling
-    match query_result {
-        Err(e) => {
-            if e.to_string().contains("duplicate key") {
-                println!("Duplicate photo found.");
-                num_duplicates += 1;
-                continue;
+            // Encode the resized DynamicImage
+            if let Err(e) = encoder.encode_image(&resized_img) {
+                eprintln!("JPEG encode error: {:?}", e);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "status": "fail", "message": "Failed to compress image" })),
+                ));
             }
-            eprintln!("upload_photos fail: insert into db: {:?}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "status": "fail", "message": "Internal Server Error" })),
-            ));
+
+            if compressed_bytes.len() <= MAX_SIZE {
+                // Good enough, break
+                break;
+            }
+
+            if quality <= MIN_QUALITY {
+                // We tried to get under 200 KB, but can't; accept current size
+                println!("WARNING: Could not reduce below 200 KB even at Q={}", quality);
+                break;
+            }
+
+            // Decrease quality by 5 and try again
+            quality = quality.saturating_sub(5);
         }
-        Ok(_) => {
-            println!(
-                "Photo inserted. final size={} KB, quality={}",
-                compressed_bytes.len() / 1000,
-                quality
-            );
-            num_photos_inserted += 1;
+
+        // 4) Insert into DB with content_type = "image/jpeg"
+        let jpeg_content_type = "image/jpeg";
+        let query_result = sqlx::query!(
+            r#"INSERT INTO photos (profile_id, file_name, content_type, photo_data)
+               VALUES ($1, $2, $3, $4)"#,
+            profile_id,
+            &file_name,
+            jpeg_content_type,
+            &compressed_bytes
+        )
+        .execute(&data.db)
+        .await;
+
+        // 5) Error & duplicate handling
+        match query_result {
+            Err(e) => {
+                if e.to_string().contains("duplicate key") {
+                    println!("Duplicate photo found.");
+                    num_duplicates += 1;
+                    continue;
+                }
+                eprintln!("upload_photos fail: insert into db: {:?}", e);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "status": "fail", "message": "Internal Server Error" })),
+                ));
+            }
+            Ok(_) => {
+                println!(
+                    "Photo inserted. final size={} KB, quality={}",
+                    compressed_bytes.len() / 1000,
+                    quality
+                );
+                num_photos_inserted += 1;
+            }
         }
     }
-}
 
 
     println!(
@@ -532,6 +494,7 @@ pub async fn get_profiles(
                 "google_ratings": p.google_ratings,
                 "instagram": p.instagram,
                 "bio": p.bio,
+                "register_number": p.register_number,
                 "experience": p.experience,
                 "skills": skills
             })
@@ -544,7 +507,6 @@ pub async fn get_profiles(
     })))
 }
 
-// and
 
 pub async fn get_profile(
     State(data): State<Arc<AppState>>,
@@ -602,6 +564,7 @@ pub async fn get_profile(
                         "google_ratings": query.google_ratings,
                         "instagram": query.instagram,
                         "bio": query.bio,
+                        "register_number": query.register_number,
                         "experience": query.experience,
                         "skills": skills
                     }
@@ -720,6 +683,7 @@ pub async fn get_profiles_by_search(
                 "google_ratings": row.get::<Option<String>, _>("google_ratings"),
                 "instagram": row.get::<Option<String>, _>("instagram"),
                 "bio": row.get::<String, _>("bio"),
+                "register_number": row.get::<String, _>("register_number"),
                 "experience": row.get::<i32, _>("experience"),
                 "skills": skills,
             })
@@ -888,6 +852,7 @@ pub async fn update_profile(
     let mut experience: Option<i32> = None;
     let mut location: Option<String> = None;
     let mut bio: Option<String> = None;
+    let mut register_number: Option<String> = None;
     let mut website: Option<String> = None;
     let mut instagram: Option<String> = None;
     let mut google_ratings: Option<String> = None;
@@ -974,6 +939,7 @@ pub async fn update_profile(
                 }
                 "location" => location = Some(text),
                 "bio" => bio = Some(text),
+                "register_number" => register_number = Some(text),
                 "website" => website = Some(text),
                 "instagram" => instagram = Some(text),
                 "google_ratings" => google_ratings = Some(text),
@@ -1020,6 +986,13 @@ pub async fn update_profile(
             query_builder.push(", ");
         }
         query_builder.push("bio = ").push_bind(bio);
+        updates_made = true;
+    }
+    if let Some(register_number) = register_number {
+        if updates_made {
+            query_builder.push(", ");
+        }
+        query_builder.push("register_number = ").push_bind(register_number);
         updates_made = true;
     }
     if let Some(experience) = experience {
@@ -1116,7 +1089,6 @@ pub async fn update_profile(
         }
     }
 
-    // Delete old photos.
     for photo_id in &deleted_photos {
         let delete_result = sqlx::query!(
             "DELETE FROM photos WHERE id = $1 AND profile_id = $2",
@@ -1135,152 +1107,107 @@ pub async fn update_profile(
         }
     }
 
-for (file_name, _original_content_type, original_bytes) in photos {
-    // 1) Decode raw bytes -> DynamicImage
-    let dyn_img = match ImageReader::new(Cursor::new(&original_bytes))
-        .with_guessed_format()
-    {
-        Ok(reader) => match reader.decode() {
-            Ok(img) => img,
+    for (file_name, _original_content_type, original_bytes) in photos {
+        let dyn_img = match ImageReader::new(Cursor::new(&original_bytes))
+            .with_guessed_format()
+        {
+            Ok(reader) => match reader.decode() {
+                Ok(img) => img,
+                Err(err) => {
+                    eprintln!("Failed to decode image: {:?}", err);
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "status": "fail", "message": "Invalid image data" })),
+                    ));
+                }
+            },
             Err(err) => {
-                eprintln!("Failed to decode image: {:?}", err);
+                eprintln!("Failed to guess format: {:?}", err);
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(json!({ "status": "fail", "message": "Invalid image data" })),
                 ));
             }
-        },
-        Err(err) => {
-            eprintln!("Failed to guess format: {:?}", err);
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "status": "fail", "message": "Invalid image data" })),
-            ));
-        }
-    };
+        };
 
-    // 2) Resize so that max width = 600 or max height = 600 (whichever is bigger).
-    //    This preserves the aspect ratio.
-    let (orig_w, orig_h) = dyn_img.dimensions();
-    let max_dim = 800u32;
+        let (orig_w, orig_h) = dyn_img.dimensions();
+        let max_dim = 800u32;
 
-    // Compute scale factors for each dimension
-    let scale_w = max_dim as f32 / orig_w as f32; 
-    let scale_h = max_dim as f32 / orig_h as f32;
-    // We pick the smaller scale so that neither dimension exceeds 600
-    let scale = scale_w.min(scale_h).min(1.0); 
-    // If the image is already smaller than 600 in both dimensions, scale=1.0 => no resize
+        let scale_w = max_dim as f32 / orig_w as f32; 
+        let scale_h = max_dim as f32 / orig_h as f32;
+        let scale = scale_w.min(scale_h).min(1.0); 
 
-    let new_w = (orig_w as f32 * scale).round() as u32;
-    let new_h = (orig_h as f32 * scale).round() as u32;
+        let new_w = (orig_w as f32 * scale).round() as u32;
+        let new_h = (orig_h as f32 * scale).round() as u32;
 
-    let resized_img = if new_w != orig_w || new_h != orig_h {
-        dyn_img.resize_exact(new_w, new_h, FilterType::CatmullRom)
-    } else {
-        // no resize needed
-        dyn_img
-    };
+        let resized_img = if new_w != orig_w || new_h != orig_h {
+            dyn_img.resize_exact(new_w, new_h, FilterType::CatmullRom)
+        } else {
+            dyn_img
+        };
 
-    // 3) Encode as JPEG, iterating until we get <= 200 KB or we hit minimal quality
-    let mut quality = 90;            // start quality
-    let mut compressed_bytes = Vec::new();
-    const MAX_SIZE: usize = 400_000; // 400 KB
-    const MIN_QUALITY: u8 = 10;
+        let mut quality = 90;
+        let mut compressed_bytes = Vec::new();
+        const MAX_SIZE: usize = 400_000;
+        const MIN_QUALITY: u8 = 10;
 
-    loop {
-        compressed_bytes.clear();
-
-        // Create a JpegEncoder with the current quality
-        let mut encoder = JpegEncoder::new_with_quality(&mut compressed_bytes, quality);
-
-        // Encode the resized DynamicImage
-        if let Err(e) = encoder.encode_image(&resized_img) {
-            eprintln!("JPEG encode error: {:?}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "status": "fail", "message": "Failed to compress image" })),
-            ));
-        }
-
-        if compressed_bytes.len() <= MAX_SIZE {
-            // Good enough, break
-            break;
-        }
-
-        if quality <= MIN_QUALITY {
-            // We tried to get under 200 KB, but can't; accept current size
-            println!("WARNING: Could not reduce below 200 KB even at Q={}", quality);
-            break;
-        }
-
-        // Decrease quality by 5 and try again
-        quality = quality.saturating_sub(5);
-    }
-
-    // 4) Insert into DB with content_type = "image/jpeg"
-    let jpeg_content_type = "image/jpeg";
-    let query_result = sqlx::query!(
-        r#"INSERT INTO photos (profile_id, file_name, content_type, photo_data)
-           VALUES ($1, $2, $3, $4)"#,
-        profile_id,
-        &file_name,
-        jpeg_content_type,
-        &compressed_bytes
-    )
-    .execute(&data.db)
-    .await;
-
-    // 5) Error & duplicate handling
-    match query_result {
-        Err(e) => {
-            if e.to_string().contains("duplicate key") {
-                println!("Duplicate photo found.");
-                continue;
+        loop {
+            compressed_bytes.clear();
+            let mut encoder = JpegEncoder::new_with_quality(&mut compressed_bytes, quality);
+            if let Err(e) = encoder.encode_image(&resized_img) {
+                eprintln!("JPEG encode error: {:?}", e);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "status": "fail", "message": "Failed to compress image" })),
+                ));
             }
-            eprintln!("upload_photos fail: insert into db: {:?}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "status": "fail", "message": "Internal Server Error" })),
-            ));
+
+            if compressed_bytes.len() <= MAX_SIZE {
+                break;
+            }
+
+            if quality <= MIN_QUALITY {
+                println!("WARNING: Could not reduce below 200 KB even at Q={}", quality);
+                break;
+            }
+
+            quality = quality.saturating_sub(5);
         }
-        Ok(_) => {
-            println!(
-                "Photo inserted. final size={} KB, quality={}",
-                compressed_bytes.len() / 1000,
-                quality
-            );
+
+        let jpeg_content_type = "image/jpeg";
+        let query_result = sqlx::query!(
+            r#"INSERT INTO photos (profile_id, file_name, content_type, photo_data)
+               VALUES ($1, $2, $3, $4)"#,
+            profile_id,
+            &file_name,
+            jpeg_content_type,
+            &compressed_bytes
+        )
+        .execute(&data.db)
+        .await;
+
+        match query_result {
+            Err(e) => {
+                if e.to_string().contains("duplicate key") {
+                    println!("Duplicate photo found.");
+                    continue;
+                }
+                eprintln!("upload_photos fail: insert into db: {:?}", e);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "status": "fail", "message": "Internal Server Error" })),
+                ));
+            }
+            Ok(_) => {
+                println!(
+                    "Photo inserted. final size={} KB, quality={}",
+                    compressed_bytes.len() / 1000,
+                    quality
+                );
+            }
         }
     }
-}
 
-    // for (file_name, content_type, photo_data) in photos {
-    //     let query_result = sqlx::query!(
-    //         "INSERT INTO photos (profile_id, file_name, content_type, photo_data) VALUES ($1, $2, $3, $4)",
-    //         profile_id,
-    //         &file_name,
-    //         &content_type,
-    //         &photo_data.as_ref()
-    //     )
-    //     .execute(&data.db)
-    //     .await;
-    //
-    //     match query_result {
-    //         Err(e) => {
-    //             if e.to_string().contains("duplicate key") {
-    //                 println!("Duplicate photo found.");
-    //                 continue;
-    //             }
-    //             eprintln!("upload_photos fail: insert into db: {:?}", e);
-    //             return Err((
-    //                 StatusCode::INTERNAL_SERVER_ERROR,
-    //                 Json(json!({ "status": "fail", "message": "Internal Server Error" })),
-    //             ));
-    //         }
-    //         Ok(_) => {
-    //             println!("Photo inserted.");
-    //         }
-    //     }
-    // }
 
     Ok((
         StatusCode::OK,
