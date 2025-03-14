@@ -4,11 +4,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{
-    model::SkillModel,
-    schema::{CreateSkillSchema, UpdateSkillSchema},
-    AppState,
-};
+use crate::{model::SkillModel, schema::{CreateSkillSchema, UpdateSkillSchema}, AppState};
 
 pub async fn get_skills(
     State(data): State<Arc<AppState>>,
@@ -82,6 +78,7 @@ pub async fn create_skill(
     ))
 }
 
+
 pub async fn update_skill(
     State(data): State<Arc<AppState>>,
     Json(body): Json<UpdateSkillSchema>,
@@ -89,7 +86,7 @@ pub async fn update_skill(
     println!("update skill");
     let updated_skill = sqlx::query!(
         r#"
-        UPDATE skills SET name = $1
+        UPDATE skills SET updated_at = NOW(), name = $1
         WHERE name = $2
         RETURNING id, name;
         "#,

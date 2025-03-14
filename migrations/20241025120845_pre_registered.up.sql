@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS pre_registered (
   created_at TIMESTAMP
   WITH
     TIME ZONE NOT NULL DEFAULT NOW (),
-    expires_at TIMESTAMP
+  expires_at TIMESTAMP
   WITH
     TIME ZONE NOT NULL DEFAULT (NOW () + INTERVAL '2 hours')
 );

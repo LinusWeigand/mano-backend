@@ -465,10 +465,33 @@ pub async fn reset_password(
     Json(body): Json<ResetPasswordSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     println!("pre_reset_password");
+    let viewer_id_result = sqlx::query!(
+        "SELECT id FROM viewers WHERE email = $1",
+        &body.email
+    )
+    .fetch_optional(&data.db)
+    .await;
+
+    let viewer_id = match viewer_id_result {
+        Ok(Some(record)) => record.id,
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({ "status": "fail", "message": "User not found" })),
+            ));
+        }
+        Err(e) => {
+            eprintln!("Error fetching viewer_id: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "status": "fail", "message": "Internal Server Error" })),
+            ));
+        }
+    };
     let query_result = sqlx::query_as!(
         ResetPasswordModel,
-        "SELECT * FROM reset_password WHERE viewer_id = (SELECT id FROM viewers WHERE email = $1)",
-        &body.email
+        "SELECT * FROM reset_password WHERE viewer_id = $1",
+        viewer_id
     )
     .fetch_one(&data.db)
     .await;
@@ -544,6 +567,22 @@ pub async fn reset_password(
             "message": "Internal Server Error"
         });
         println!("register: fail: failed to set reset_password was_used to true.");
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
+    let update_result = sqlx::query!(
+        "UPDATE viewers SET updated_at = NOW() WHERE id = $1",
+        viewer_id
+    )
+    .execute(&data.db)
+    .await;
+
+    if let Err(e) = update_result {
+        eprintln!("Error updating last_login: {:?}", e);
+        let error_response = json!({
+            "status": "error",
+            "message": "Failed to update last login timestamp"
+        });
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
     }
 

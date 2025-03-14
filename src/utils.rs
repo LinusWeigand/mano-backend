@@ -91,6 +91,22 @@ pub async fn log_user_in(
     headers.append(header::SET_COOKIE, session_token_cookie.parse().unwrap());
     headers.append(header::SET_COOKIE, session_id_cookie.parse().unwrap());
 
+    let update_result = sqlx::query!(
+        "UPDATE viewers SET last_login = NOW() WHERE id = $1",
+        viewer_id
+    )
+    .execute(&data.db)
+    .await;
+
+    if let Err(e) = update_result {
+        eprintln!("Error updating last_login: {:?}", e);
+        let error_response = json!({
+            "status": "error",
+            "message": "Failed to update last login timestamp"
+        });
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+    }
+
     let has_profile = match sqlx::query!(
         "SELECT id FROM profiles WHERE viewer_id = $1 LIMIT 1",
         viewer_id

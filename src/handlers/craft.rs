@@ -88,7 +88,7 @@ pub async fn update_craft(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let updated_craft = sqlx::query!(
         r#"
-        UPDATE crafts SET name = $1
+        UPDATE crafts SET updated_at = NOW(), name = $1
         WHERE name = $2
         RETURNING id, name;
         "#,

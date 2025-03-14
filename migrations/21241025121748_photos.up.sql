@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS photos (
   content_type VARCHAR(100) NOT NULL,
   photo_data BYTEA NOT NULL,
   version SMALLINT NOT NULL DEFAULT 1,
-  created_at TIMESTAMP
+  created_at TIMESTAMP 
   WITH
     TIME ZONE DEFAULT NOW ()
 );

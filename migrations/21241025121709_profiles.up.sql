@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at TIMESTAMP
   WITH
     TIME ZONE DEFAULT NOW (),
-    updated_at TIMESTAMP
+  updated_at TIMESTAMP
   WITH
     TIME ZONE DEFAULT NOW ()
 );
