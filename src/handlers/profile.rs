@@ -69,7 +69,7 @@ pub async fn create_profile(
 
     let mut name: Option<String> = None;
     let mut craft_id: Option<Uuid> = None;
-    let mut experience: Option<i32> = None;
+    let mut experience: Option<i16> = None;
     let mut location: Option<String> = None;
     let mut bio: Option<String> = None;
     let mut register_number: Option<String> = None;
@@ -169,7 +169,7 @@ pub async fn create_profile(
                     }
                 }
                 "experience" => {
-                    let exp: i32 = text.parse().map_err(|e| {
+                    let exp: i16 = text.parse().map_err(|e| {
                         eprintln!("Error parsing experience: {:?}", e);
                         (
                             StatusCode::BAD_REQUEST,
@@ -684,7 +684,7 @@ pub async fn get_profiles_by_search(
                 "instagram": row.get::<Option<String>, _>("instagram"),
                 "bio": row.get::<String, _>("bio"),
                 "register_number": row.get::<String, _>("register_number"),
-                "experience": row.get::<i32, _>("experience"),
+                "experience": row.get::<i16, _>("experience"),
                 "skills": skills,
             })
         })
@@ -849,7 +849,7 @@ pub async fn update_profile(
 
     let mut name: Option<String> = None;
     let mut craft_id: Option<Uuid> = None;
-    let mut experience: Option<i32> = None;
+    let mut experience: Option<i16> = None;
     let mut location: Option<String> = None;
     let mut bio: Option<String> = None;
     let mut register_number: Option<String> = None;
@@ -930,7 +930,7 @@ pub async fn update_profile(
                     }
                 }
                 "experience" => {
-                    experience = Some(text.parse::<i32>().map_err(|_| {
+                    experience = Some(text.parse::<i16>().map_err(|_| {
                         (
                             StatusCode::BAD_REQUEST,
                             Json(json!({"status": "fail", "message": "Invalid experience format"})),

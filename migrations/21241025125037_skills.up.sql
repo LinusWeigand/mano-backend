@@ -3,16 +3,16 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS skills (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL UNIQUE,
-    version INT NOT NULL DEFAULT 1,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    version SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS profile_skill (
     profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
-    PRIMARY KEY (profile_id, skill_id)
-    version INT NOT NULL DEFAULT 1,
+    PRIMARY KEY (profile_id, skill_id),
+    version SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 

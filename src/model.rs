@@ -13,6 +13,7 @@ pub struct ViewerModel {
     pub salt: String,
     pub verified: bool,
     pub is_admin: bool,
+    pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(rename = "updatedAt")]
@@ -29,6 +30,7 @@ pub struct PreRegisteredModel {
     pub verification_code_hashed: String,
     pub salt: String,
     pub was_used: bool,
+    pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "expiresAt")]
@@ -42,6 +44,7 @@ pub struct UserSessionModel {
     pub viewer_id: Uuid,
     pub hashed_session_token: String,
     pub salt: String,
+    pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "expiresAt")]
@@ -56,6 +59,7 @@ pub struct ResetPasswordModel {
     pub hashed_reset_password_token: String,
     pub salt: String,
     pub was_used: bool,
+    pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "expiresAt")]
@@ -73,9 +77,9 @@ pub struct ProfileModel {
     pub website: Option<String>,
     pub instagram: Option<String>,
     pub bio: String,
-    pub experience: i32,
+    pub experience: i16,
     pub google_ratings: Option<String>,
-    // pub portfolio: Vec<Vec<String>>,
+    pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(rename = "updatedAt")]
@@ -103,6 +107,7 @@ pub struct PhotoModel {
     pub file_name: String,
     pub content_type: String,
     pub photo_data: Vec<u8>,
+    pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -111,7 +116,6 @@ pub struct PhotoModel {
 #[allow(non_snake_case)]
 pub struct PhotoMetadataModel {
     pub id: Uuid,
-    // pub profile_id: Uuid,
     pub file_name: String,
     pub content_type: String,
 }
@@ -121,7 +125,6 @@ pub struct PhotoMetadataModel {
 pub struct PhotoDataModel {
     pub file_name: String,
     pub content_type: String,
-    // pub profile_id: Uuid,
     pub photo_data: Vec<u8>,
 }
 
