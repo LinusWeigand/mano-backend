@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
-use uuid::Uuid;
 
 use crate::{
     model::CraftModel,
     schema::{CreateCraftSchema, UpdateCraftSchema},
     AppState,
 };
+
+use super::auth::AuthenticatedViewer;
 
 pub async fn get_crafts(
     State(data): State<Arc<AppState>>,
@@ -37,8 +38,18 @@ pub async fn get_crafts(
 
 pub async fn create_craft(
     State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
     Json(body): Json<CreateCraftSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
     let new_craft = sqlx::query!(
         r#"
         INSERT INTO crafts (name) 
@@ -84,8 +95,18 @@ pub async fn create_craft(
 
 pub async fn update_craft(
     State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
     Json(body): Json<UpdateCraftSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
     let updated_craft = sqlx::query!(
         r#"
         UPDATE crafts SET updated_at = NOW(), name = $1

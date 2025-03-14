@@ -1205,7 +1205,7 @@ pub async fn delete_profile(
         .execute(&data.db)
         .await
         .map_err(|e| {
-            eprintln!("failed getting profiles corresponding to user");
+            eprintln!("failed getting profiles corresponding to user: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -1286,7 +1286,17 @@ pub async fn get_profile_id(
 
 pub async fn get_unaccepted_profiles(
     State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
     let profiles = sqlx::query!(
         r#"
         SELECT p.*, 
@@ -1346,4 +1356,133 @@ pub async fn get_unaccepted_profiles(
         "status": "success",
         "data": profiles_json
     })))
+}
+
+pub async fn get_profiles_without_viewer(
+    State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
+    let profiles = sqlx::query!(
+        r#"
+        SELECT p.*, 
+               c.name AS craft_name,
+               COALESCE(
+                   json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
+               ) AS skills
+        FROM profiles p
+        LEFT JOIN crafts c ON p.craft_id = c.id
+        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
+        LEFT JOIN skills s ON ps.skill_id = s.id
+        WHERE p.viewer_id IS NULL
+        GROUP BY p.id, c.name
+        "#
+    )
+    .fetch_all(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("get_profiles_without_viewer error: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+
+    let profiles_json: Vec<serde_json::Value> = profiles
+        .iter()
+        .map(|p| {
+            // Parse the 'skills' JSON array into a Vec<String>
+            let skills: Vec<String> = p
+                .skills
+                .as_ref()
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+
+            json!({
+                "id": p.id,
+                "viewer_id": p.viewer_id,
+                "name": p.name,
+                "craft": p.craft_name,
+                "location": p.location,
+                "website": p.website,
+                "google_ratings": p.google_ratings,
+                "instagram": p.instagram,
+                "bio": p.bio,
+                "register_number": p.register_number,
+                "experience": p.experience,
+                "skills": skills
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "status": "success",
+        "data": profiles_json
+    })))
+}
+
+pub async fn accept_profile(
+    State(data): State<Arc<AppState>>,
+    Path(profile_id): Path<Uuid>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
+
+    let result = sqlx::query!(
+        r#"
+        UPDATE profiles
+        SET accepted = true
+        WHERE id = $1
+        "#,
+        profile_id
+    )
+    .execute(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("Error updating profile accepted: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+
+    if result.rows_affected() == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "fail",
+                "message": "Profile not found"
+            })),
+        ));
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "message": "Profile accepted successfully"
+        })),
+    ))
 }

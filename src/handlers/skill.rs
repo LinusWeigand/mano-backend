@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
-use uuid::Uuid;
 
 use crate::{model::SkillModel, schema::{CreateSkillSchema, UpdateSkillSchema}, AppState};
+
+use super::auth::AuthenticatedViewer;
 
 pub async fn get_skills(
     State(data): State<Arc<AppState>>,
@@ -13,6 +14,7 @@ pub async fn get_skills(
         .fetch_all(&data.db)
         .await
         .map_err(|e| {
+            eprintln!("Error getting skill: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -33,8 +35,19 @@ pub async fn get_skills(
 
 pub async fn create_skill(
     State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
     Json(body): Json<CreateSkillSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
+
     let new_skill = sqlx::query!(
         r#"
         INSERT INTO skills (name)
@@ -81,9 +94,20 @@ pub async fn create_skill(
 
 pub async fn update_skill(
     State(data): State<Arc<AppState>>,
+    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
     Json(body): Json<UpdateSkillSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     println!("update skill");
+
+    if !is_admin {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "fail",
+                "message": "Only admins can accept profiles."
+            })),
+        ));
+    }
     let updated_skill = sqlx::query!(
         r#"
         UPDATE skills SET updated_at = NOW(), name = $1

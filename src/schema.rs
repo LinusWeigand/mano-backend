@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug, Default)]
-pub struct FilterOptions {
-    pub page: Option<usize>,
-    pub limit: Option<usize>,
-}
+// #[derive(Deserialize, Default)]
+// pub struct FilterOptions {
+//     page: Option<usize>,
+//     limit: Option<usize>,
+// }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateViewerSchema {
