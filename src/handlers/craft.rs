@@ -4,7 +4,11 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{model::CraftModel, schema::{CreateCraftSchema, UpdateCraftSchema}, AppState};
+use crate::{
+    model::CraftModel,
+    schema::{CreateCraftSchema, UpdateCraftSchema},
+    AppState,
+};
 
 pub async fn get_crafts(
     State(data): State<Arc<AppState>>,
@@ -37,8 +41,8 @@ pub async fn create_craft(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let new_craft = sqlx::query!(
         r#"
-        INSERT INTO crafts (name, version) 
-        VALUES ($1, 1)
+        INSERT INTO crafts (name) 
+        VALUES ($1)
         RETURNING id, name;
         "#,
         body.name

@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS skills (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL UNIQUE,
-    version INT NOT NULL,
+    version INT NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -12,18 +12,20 @@ CREATE TABLE IF NOT EXISTS profile_skill (
     profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
     PRIMARY KEY (profile_id, skill_id)
+    version INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO skills (name, version) VALUES ('Küchen', 1);
-INSERT INTO skills (name, version) VALUES ('Holzmöbel', 1);
-INSERT INTO skills (name, version) VALUES ('Elektrik', 1);
-INSERT INTO skills (name, version) VALUES ('Gasheizung', 1);
-INSERT INTO skills (name, version) VALUES ('Bad', 1);
-INSERT INTO skills (name, version) VALUES ('Fliesen', 1);
-INSERT INTO skills (name, version) VALUES ('Altbausanierung', 1);
-INSERT INTO skills (name, version) VALUES ('Fliesenarbeiten', 1);
-INSERT INTO skills (name, version) VALUES ('Trockenbau', 1);
-INSERT INTO skills (name, version) VALUES ('Türenmontage', 1);
-INSERT INTO skills (name, version) VALUES ('Fenstermontage', 1);
-INSERT INTO skills (name, version) VALUES ('Bodenbeläge', 1);
-INSERT INTO skills (name, version) VALUES ('Pflasterarbeiten', 1);
+INSERT INTO skills (name) VALUES ('Küchen');
+INSERT INTO skills (name) VALUES ('Holzmöbel');
+INSERT INTO skills (name) VALUES ('Elektrik');
+INSERT INTO skills (name) VALUES ('Gasheizung');
+INSERT INTO skills (name) VALUES ('Bad');
+INSERT INTO skills (name) VALUES ('Fliesen');
+INSERT INTO skills (name) VALUES ('Altbausanierung');
+INSERT INTO skills (name) VALUES ('Fliesenarbeiten');
+INSERT INTO skills (name) VALUES ('Trockenbau');
+INSERT INTO skills (name) VALUES ('Türenmontage');
+INSERT INTO skills (name) VALUES ('Fenstermontage');
+INSERT INTO skills (name) VALUES ('Bodenbeläge');
+INSERT INTO skills (name) VALUES ('Pflasterarbeiten');

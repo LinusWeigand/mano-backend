@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   website VARCHAR(100),
   instagram VARCHAR(100),
   google_ratings TEXT,
+  accepted BOOLEAN NOT NULL,
+  version INT NOT NULL DEFAULT 1,
   created_at TIMESTAMP
   WITH
     TIME ZONE DEFAULT NOW (),

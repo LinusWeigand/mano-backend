@@ -4,7 +4,11 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{model::SkillModel, schema::{CreateSkillSchema, UpdateSkillSchema}, AppState};
+use crate::{
+    model::SkillModel,
+    schema::{CreateSkillSchema, UpdateSkillSchema},
+    AppState,
+};
 
 pub async fn get_skills(
     State(data): State<Arc<AppState>>,
@@ -37,8 +41,8 @@ pub async fn create_skill(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let new_skill = sqlx::query!(
         r#"
-        INSERT INTO skills (name, version)
-        VALUES ($1, 1)
+        INSERT INTO skills (name)
+        VALUES ($1)
         RETURNING id, name;
         "#,
         body.name
@@ -77,7 +81,6 @@ pub async fn create_skill(
         })),
     ))
 }
-
 
 pub async fn update_skill(
     State(data): State<Arc<AppState>>,
