@@ -953,69 +953,36 @@ pub async fn update_profile(
         }
     }
 
-    let mut query_builder = QueryBuilder::<sqlx::Postgres>::new("UPDATE profiles SET ");
-    let mut updates_made = false;
+    let mut query_builder = QueryBuilder::<sqlx::Postgres>::new("UPDATE profiles SET updated_at = NOW()");
 
     if let Some(name) = name {
-        query_builder.push("name = ").push_bind(name);
-        updates_made = true;
+        query_builder.push(", name = ").push_bind(name);
     }
     if let Some(location) = location {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("location = ").push_bind(location);
-        updates_made = true;
+        query_builder.push(", location = ").push_bind(location);
     }
     if let Some(website) = website {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("website = ").push_bind(website);
-        updates_made = true;
+        query_builder.push(", website = ").push_bind(website);
     }
     if let Some(instagram) = instagram {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("instagram = ").push_bind(instagram);
-        updates_made = true;
+        query_builder.push(", instagram = ").push_bind(instagram);
     }
     if let Some(bio) = bio {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("bio = ").push_bind(bio);
-        updates_made = true;
+        query_builder.push(", bio = ").push_bind(bio);
     }
     if let Some(register_number) = register_number {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("register_number = ").push_bind(register_number);
-        updates_made = true;
+        query_builder.push(", register_number = ").push_bind(register_number);
     }
     if let Some(experience) = experience {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("experience = ").push_bind(experience);
-        updates_made = true;
+        query_builder.push(", experience = ").push_bind(experience);
     }
     if let Some(google_ratings) = google_ratings {
-        if updates_made {
-            query_builder.push(", ");
-        }
         query_builder
-            .push("google_ratings = ")
+            .push(", google_ratings = ")
             .push_bind(google_ratings);
-        updates_made = true;
     }
     if let Some(craft_id) = craft_id {
-        if updates_made {
-            query_builder.push(", ");
-        }
-        query_builder.push("craft_id = ").push_bind(craft_id);
+        query_builder.push(", craft_id = ").push_bind(craft_id);
     }
 
     query_builder.push(" WHERE id = ").push_bind(profile_id);

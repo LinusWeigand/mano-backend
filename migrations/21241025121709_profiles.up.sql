@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   website VARCHAR(100),
   instagram VARCHAR(100),
   google_ratings VARCHAR(100),
-  accepted BOOLEAN NOT NULL,
+  accepted BOOLEAN NOT NULL DEFAULT FALSE,
   version SMALLINT NOT NULL DEFAULT 1,
   created_at TIMESTAMP
   WITH
