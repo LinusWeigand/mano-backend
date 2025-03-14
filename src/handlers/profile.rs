@@ -459,6 +459,7 @@ pub async fn get_profiles(
         LEFT JOIN crafts c ON p.craft_id = c.id
         LEFT JOIN profile_skill ps ON p.id = ps.profile_id
         LEFT JOIN skills s ON ps.skill_id = s.id
+        WHERE accepted = true
         GROUP BY p.id, c.name
         "#
     )
@@ -590,7 +591,7 @@ pub async fn get_profiles_by_search(
         LEFT JOIN crafts ON profiles.craft_id = crafts.id
         LEFT JOIN profile_skill ON profiles.id = profile_skill.profile_id
         LEFT JOIN skills ON profile_skill.skill_id = skills.id
-        WHERE 
+        WHERE accepted = true AND 
         "#,
     );
 
@@ -1280,4 +1281,69 @@ pub async fn get_profile_id(
             }
         })),
     ))
+}
+
+
+pub async fn get_unaccepted_profiles(
+    State(data): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let profiles = sqlx::query!(
+        r#"
+        SELECT p.*, 
+               c.name AS craft_name,
+               COALESCE(
+                   json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
+               ) AS skills
+        FROM profiles p
+        LEFT JOIN crafts c ON p.craft_id = c.id
+        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
+        LEFT JOIN skills s ON ps.skill_id = s.id
+        WHERE p.accepted = false
+        GROUP BY p.id, c.name
+        "#
+    )
+    .fetch_all(&data.db)
+    .await
+    .map_err(|e| {
+        eprintln!("get_unaccepted_profiles error: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+
+    let profiles_json: Vec<serde_json::Value> = profiles
+        .iter()
+        .map(|p| {
+            // Parse the 'skills' JSON array into a Vec<String>
+            let skills: Vec<String> = p
+                .skills
+                .as_ref()
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+
+            json!({
+                "id": p.id,
+                "viewer_id": p.viewer_id,
+                "name": p.name,
+                "craft": p.craft_name,
+                "location": p.location,
+                "website": p.website,
+                "google_ratings": p.google_ratings,
+                "instagram": p.instagram,
+                "bio": p.bio,
+                "register_number": p.register_number,
+                "experience": p.experience,
+                "skills": skills
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "status": "success",
+        "data": profiles_json
+    })))
 }
