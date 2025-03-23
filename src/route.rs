@@ -3,8 +3,8 @@ use crate::{
         auth::{
             auth_status, get_viewer, is_admin, login, logout, pre_register, pre_reset_password, register, reset_password
         }, craft::{create_craft, get_crafts, update_craft}, health_checker_handler, profile::{
-            accept_profile, create_profile, delete_profile, get_photo, get_photo_metadata, get_photos_of_profile, get_profile, get_profile_id, get_profiles, get_profiles_by_search, get_profiles_without_viewer, get_unaccepted_profiles, update_profile
-        }, skill::{create_skill, get_skills, update_skill}
+            accept_profile, create_profile, delete_profile, get_photo, get_photo_metadata, get_photos_of_profile, get_profile, get_profile_email, get_profile_id, get_profiles, get_profiles_by_search, get_profiles_without_viewer, get_unaccepted_profiles, update_profile
+        }, rechtsformen::{create_rechtsform, get_explain_rechtsformen, get_rechtsformen, update_rechtsform}, skill::{create_skill, get_skills, update_skill}
     },
     AppState,
 };
@@ -36,13 +36,18 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/api/crafts", get(get_crafts))
         .route("/api/crafts", post(create_craft))
         .route("/api/crafts", put(update_craft))
+        .route("/api/rechtsformen", get(get_rechtsformen))
+        .route("/api/rechtsformen/explain", get(get_explain_rechtsformen))
+        .route("/api/rechtsformen", post(create_rechtsform))
+        .route("/api/rechtsformen", put(update_rechtsform))
         .route("/api/profiles", get(get_profiles))
         .route("/api/profiles/unaccepted", get(get_unaccepted_profiles))
         .route("/api/profiles/unverified", get(get_profiles_without_viewer))
         .route("/api/profile/:id", get(get_profile))
         .route("/api/profile/:id", delete(delete_profile))
         .route("/api/profile/:id", put(update_profile))
-        .route("/api/profile/accept/:id", put(accept_profile))
+        .route("/api/profile/email/:id", get(get_profile_email))
+        .route("/api/profile/accept/:id", post(accept_profile))
         .route("/api/profile", post(create_profile))
         .route("/api/profile-id", get(get_profile_id))
         .route("/api/profiles/search", post(get_profiles_by_search))

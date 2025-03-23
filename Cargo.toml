@@ -11,12 +11,13 @@ hex = "0.4.3"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 sha2 = "0.10.8"
-sqlx = { version = "0.8.2", features = [
+sqlx = { version = "0.8.2", default-features = false, features = [
     "macros",
-    "runtime-tokio-native-tls",
     "postgres",
     "chrono",
     "uuid",
+    "json",
+    "runtime-tokio-rustls", 
 ] }
 tokio = { version = "1.40.0", features = ["full"] }
 tower-http = { version = "0.6.1", features = ["cors", "limit"] }
@@ -32,8 +33,11 @@ thiserror = "1.0.61"
 urlencoding = "2.1.3"
 base64 = "0.22.1"
 axum-extra = { version = "0.9.4", features = ["typed-header", "cookie"] }
-# tokio-util = { version = "0.7.14", features = ["io"] }
-# bytes = "1.10.1"
-# hyper = "1.6.0"
 image = "0.25.5"
-# axum = { version = "0.8.1", features = ["multipart"] }
+futures = "0.3.31"
+chromiumoxide = "0.5"
+scraper = "0.23.1"
+
+[[bin]]
+name = "mano"
+path = "src/main.rs"

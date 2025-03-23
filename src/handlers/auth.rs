@@ -111,10 +111,14 @@ pub async fn logout(
         is_admin,
     }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // Clear cookies
-    let session_token_cookie =
-        "session_token=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
-    let session_id_cookie = "session_id=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
+    // Development
+    let session_token_cookie = "session_token=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
+    let session_id_cookie = "session_id=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
+
+    // TODO: Production
+    // let session_token_cookie =
+    //     "session_token=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
+    // let session_id_cookie = "session_id=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
 
     let mut headers = axum::http::HeaderMap::new();
     headers.append(header::SET_COOKIE, session_token_cookie.parse().unwrap());
@@ -163,7 +167,7 @@ pub async fn pre_register(
     let query_result = sqlx::query_as!(
         ViewerModel,
         "INSERT INTO viewers (email, first_name, last_name, hashed, salt) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-        body.email,
+        body.email.to_lowercase(),
         body.first_name,
         body.last_name,
         hashed_password,
@@ -251,7 +255,7 @@ pub async fn register(
     let query_result = sqlx::query_as!(
         PreRegisteredModel,
         "SELECT * FROM pre_registered WHERE viewer_id = (SELECT id FROM viewers WHERE email = $1)",
-        body.email
+        body.email.to_lowercase(),
     )
     .fetch_one(&data.db)
     .await;
@@ -337,7 +341,7 @@ pub async fn login(
     let query_result = sqlx::query_as!(
         ViewerModel,
         "SELECT * FROM viewers WHERE email = $1",
-        &body.email
+        &body.email.to_lowercase()
     )
     .fetch_one(&data.db)
     .await;
@@ -377,7 +381,7 @@ pub async fn pre_reset_password(
     let query_result = sqlx::query_as!(
         ViewerModel,
         "SELECT * FROM viewers WHERE email = $1",
-        &body.email
+        &body.email.to_lowercase()
     )
     .fetch_one(&data.db)
     .await;
@@ -465,12 +469,9 @@ pub async fn reset_password(
     Json(body): Json<ResetPasswordSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     println!("pre_reset_password");
-    let viewer_id_result = sqlx::query!(
-        "SELECT id FROM viewers WHERE email = $1",
-        &body.email
-    )
-    .fetch_optional(&data.db)
-    .await;
+    let viewer_id_result = sqlx::query!("SELECT id FROM viewers WHERE email = $1", &body.email)
+        .fetch_optional(&data.db)
+        .await;
 
     let viewer_id = match viewer_id_result {
         Ok(Some(record)) => record.id,
@@ -598,10 +599,13 @@ pub async fn get_viewer(
     State(data): State<Arc<AppState>>,
     Path(email): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result =
-        sqlx::query_as!(ViewerModel, "SELECT * FROM viewers WHERE email = $1", email)
-            .fetch_one(&data.db)
-            .await;
+    let query_result = sqlx::query_as!(
+        ViewerModel,
+        "SELECT * FROM viewers WHERE email = $1",
+        email.to_lowercase()
+    )
+    .fetch_one(&data.db)
+    .await;
 
     match query_result {
         Ok(viewer) => {

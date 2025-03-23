@@ -4,6 +4,8 @@ use serde_json::json;
 pub mod auth;
 pub mod craft;
 pub mod profile;
+// pub mod rating;
+pub mod rechtsformen;
 pub mod skill;
 
 pub async fn health_checker_handler() -> impl IntoResponse {

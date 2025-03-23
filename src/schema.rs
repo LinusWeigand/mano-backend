@@ -1,18 +1,11 @@
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
 
 // #[derive(Deserialize, Default)]
 // pub struct FilterOptions {
 //     page: Option<usize>,
 //     limit: Option<usize>,
 // }
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CreateViewerSchema {
-    pub email: String,
-    pub hashed: String,
-    pub salt: String,
-    pub verified: Option<bool>,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LoginSchema {
@@ -47,36 +40,6 @@ pub struct ResetPasswordSchema {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct UpdateViewerSchema {
-    pub email: Option<String>,
-    pub hashed: Option<String>,
-    pub salt: Option<String>,
-    pub verified: Option<bool>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SessionVerifySchema {
-    pub email: String,
-    pub session_token: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CreateProfilSchema {
-    pub email: String,
-    pub name: String,
-    pub craft: String,
-    pub location: String,
-    pub website: Option<String>,
-    pub instagram: Option<String>,
-    pub skills: Vec<String>,
-    pub bio: String,
-    pub register_number: String,
-    pub experience: i16,
-    pub google_rating: Option<String>,
-    pub myhammer_rating: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct SearchSchema {
     pub name: Option<String>,
     pub craft: Option<String>,
@@ -102,6 +65,17 @@ pub struct CreateSkillSchema {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdateSkillSchema {
+    pub old_name: String,
+    pub new_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateRechtsformSchema {
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateRechtsformSchema {
     pub old_name: String,
     pub new_name: String,
 }

@@ -72,32 +72,21 @@ pub struct ProfileModel {
     pub id: Uuid,
     pub viewer_id: Uuid,
     pub name: String,
+    pub rechtsform_id: Uuid,
+    pub email: String,
+    pub telefon: String,
     pub craft_id: Uuid,
+    pub experience: i16,
     pub location: String,
     pub website: Option<String>,
     pub instagram: Option<String>,
     pub bio: String,
-    pub experience: i16,
-    pub google_ratings: Option<String>,
+    pub handwerks_karten_nummer: String,
     pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(rename = "updatedAt")]
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-#[derive(Debug, FromRow, Deserialize, Serialize)]
-#[allow(non_snake_case)]
-pub struct ProfileUpdateModel {
-    pub google_ratings: Option<String>,
-    pub name: Option<String>,
-    pub craft: Option<String>,
-    pub location: Option<String>,
-    pub website: Option<String>,
-    pub instagram: Option<String>,
-    pub skills: Option<Vec<String>>,
-    pub bio: Option<String>,
-    pub experience: Option<i16>,
 }
 
 #[derive(Debug, FromRow, Deserialize, Serialize)]
@@ -138,4 +127,16 @@ pub struct SkillModel {
 #[allow(non_snake_case)]
 pub struct CraftModel {
     pub name: String,
+}
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct RechtsformModel {
+    pub name: String,
+}
+
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct ExplainRechtsformModel {
+    pub explain_name: String,
 }
