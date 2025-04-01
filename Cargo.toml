@@ -35,8 +35,6 @@ base64 = "0.22.1"
 axum-extra = { version = "0.9.4", features = ["typed-header", "cookie"] }
 image = "0.25.5"
 futures = "0.3.31"
-chromiumoxide = "0.5"
-scraper = "0.23.1"
 
 [[bin]]
 name = "mano"

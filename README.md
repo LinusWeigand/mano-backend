@@ -14,3 +14,5 @@
 
 5. Add Migration
     sqlx migrate add <name>
+
+cargo zigbuild --release --target x86_64-unknown-linux-gnu

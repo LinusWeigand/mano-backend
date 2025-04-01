@@ -3,3 +3,9 @@ SET
   is_admin = true
 WHERE
   email = 'linus@couchtec.com';
+
+UPDATE viewers
+SET
+  is_admin = true
+WHERE
+  email = 'matteo.levi.golisano@gmail.com';

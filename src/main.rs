@@ -9,12 +9,13 @@ use axum::extract::DefaultBodyLimit;
 use dotenv::dotenv;
 use email::EmailManager;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::{env, process::exit, sync::Arc};
+use std::{env, process::exit, sync::Arc, time::Duration};
 
 pub struct AppState {
     db: Pool<Postgres>,
     email_manager: Arc<EmailManager>,
     url: String,
+    domain: String,
 }
 
 #[tokio::main]
@@ -23,6 +24,7 @@ async fn main() {
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set!");
     let url = env::var("URL").expect("URL must be set!");
+    let domain = env::var("DOMAIN").expect("DOMAIN must be set!");
 
     let smtp_email = env::var("SMTP_EMAIL").expect("SMTP_EMAIL must be set");
     let smtp_password = env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set");
@@ -35,7 +37,10 @@ async fn main() {
     };
 
     let pool = match PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(20) // Increased from 10
+        .acquire_timeout(Duration::from_secs(30)) // Wait up to 30s for a connection
+        .idle_timeout(Duration::from_secs(300)) // Close idle connections after 5 minutes
+        .max_lifetime(Duration::from_secs(1800)) // Close connections after 30 minutes
         .connect(&database_url)
         .await
     {
@@ -53,6 +58,7 @@ async fn main() {
         db: pool.clone(),
         email_manager: email_manager.clone(),
         url,
+        domain,
     }))
     .layer(DefaultBodyLimit::max(40 * 1024 * 1024));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();

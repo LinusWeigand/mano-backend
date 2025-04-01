@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde_json::json;
 
 use crate::{
-    model::{RechtsformModel, ExplainRechtsformModel},
+    model::{ExplainRechtsformModel, RechtsformModel},
     schema::{CreateRechtsformSchema, UpdateRechtsformSchema},
     AppState,
 };
@@ -27,35 +32,54 @@ pub async fn get_rechtsformen(
             )
         })?;
 
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=60"),
+    );
+
     Ok((
         StatusCode::OK,
+        headers,
         Json(json!({
-        "status": "success",
-        "data": query
+            "status": "success",
+            "data": query
         })),
     ))
 }
 pub async fn get_explain_rechtsformen(
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query = sqlx::query_as!(ExplainRechtsformModel, "SELECT explain_name FROM rechtsformen")
-        .fetch_all(&data.db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": "Internal Server Error"
-                })),
-            )
-        })?;
+    let query = sqlx::query_as!(
+        ExplainRechtsformModel,
+        "SELECT explain_name FROM rechtsformen"
+    )
+    .fetch_all(&data.db)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": "Internal Server Error"
+            })),
+        )
+    })?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=86400"),
+    );
 
     Ok((
         StatusCode::OK,
+        headers,
         Json(json!({
-        "status": "success",
-        "data": query
+            "status": "success",
+            "data": query
         })),
     ))
 }

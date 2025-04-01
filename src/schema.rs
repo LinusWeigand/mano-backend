@@ -45,6 +45,9 @@ pub struct SearchSchema {
     pub craft: Option<String>,
     pub location: Option<String>,
     pub skill: Option<String>,
+    pub range: Option<f64>, // in kilometers
+    pub lat: Option<f64>,
+    pub lng: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

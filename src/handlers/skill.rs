@@ -1,9 +1,18 @@
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde_json::json;
 
-use crate::{model::SkillModel, schema::{CreateSkillSchema, UpdateSkillSchema}, AppState};
+use crate::{
+    model::SkillModel,
+    schema::{CreateSkillSchema, UpdateSkillSchema},
+    AppState,
+};
 
 use super::auth::AuthenticatedViewer;
 
@@ -24,18 +33,29 @@ pub async fn get_skills(
             )
         })?;
 
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=60"),
+    );
+
     Ok((
         StatusCode::OK,
+        headers,
         Json(json!({
-        "status": "success",
-        "data": query
+            "status": "success",
+            "data": query
         })),
     ))
 }
 
 pub async fn create_skill(
     State(data): State<Arc<AppState>>,
-    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
+    AuthenticatedViewer {
+        viewer_id: _viewer_id,
+        is_admin,
+    }: AuthenticatedViewer,
     Json(body): Json<CreateSkillSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     if !is_admin {
@@ -91,10 +111,12 @@ pub async fn create_skill(
     ))
 }
 
-
 pub async fn update_skill(
     State(data): State<Arc<AppState>>,
-    AuthenticatedViewer { viewer_id: _viewer_id, is_admin }: AuthenticatedViewer,
+    AuthenticatedViewer {
+        viewer_id: _viewer_id,
+        is_admin,
+    }: AuthenticatedViewer,
     Json(body): Json<UpdateSkillSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     println!("update skill");

@@ -2,11 +2,11 @@ use image::{
     codecs::jpeg::JpegEncoder, imageops::FilterType, io::Reader as ImageReader, GenericImageView,
 };
 use sqlx::Row;
-use std::io::Cursor;
 use std::sync::Arc;
+use std::{collections::HashMap, io::Cursor};
 
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     Json,
@@ -15,11 +15,7 @@ use serde_json::json;
 use sqlx::QueryBuilder;
 use uuid::Uuid;
 
-use crate::{
-    model::{PhotoDataModel, PhotoMetadataModel},
-    schema::SearchSchema,
-    AppState,
-};
+use crate::{model::PhotoDataModel, schema::SearchSchema, AppState};
 
 use super::auth::AuthenticatedViewer;
 
@@ -68,6 +64,8 @@ pub async fn create_profile(
     let mut craft_id: Option<Uuid> = None;
     let mut experience: Option<i16> = None;
     let mut location: Option<String> = None;
+    let mut lat: Option<f64> = None;
+    let mut lng: Option<f64> = None;
     let mut website: Option<String> = None;
     let mut instagram: Option<String> = None;
     let mut skills: Option<Vec<String>> = None;
@@ -206,6 +204,30 @@ pub async fn create_profile(
                     experience = Some(exp);
                 }
                 "location" => location = Some(text),
+                "lng" => {
+                    let value: f64 = text.parse().map_err(|e| {
+                        eprintln!("Error parsing lng: {:?}", e);
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(
+                                json!({ "status": "fail", "message": "Invalid experience format" }),
+                            ),
+                        )
+                    })?;
+                    lng = Some(value);
+                }
+                "lat" => {
+                    let value: f64 = text.parse().map_err(|e| {
+                        eprintln!("Error parsing lng: {:?}", e);
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(
+                                json!({ "status": "fail", "message": "Invalid experience format" }),
+                            ),
+                        )
+                    })?;
+                    lat = Some(value);
+                }
                 "website" => website = Some(text),
                 "instagram" => instagram = Some(text),
                 "bio" => bio = Some(text),
@@ -243,6 +265,8 @@ pub async fn create_profile(
     let craft_id = craft_id.unwrap_or_default();
     let experience = experience.unwrap_or_default();
     let location = location.unwrap_or_default();
+    let lat = lat.unwrap_or_default();
+    let lng = lng.unwrap_or_default();
     let website = website.unwrap_or_default();
     let instagram = instagram.unwrap_or_default();
     let skills = skills.unwrap_or_default();
@@ -252,9 +276,9 @@ pub async fn create_profile(
     let profile = sqlx::query!(
         r#"
         INSERT INTO profiles (
-            viewer_id, name, rechtsform_id, email, telefon, craft_id, experience, location, website, instagram, bio, handwerks_karten_nummer, accepted
+            viewer_id, name, rechtsform_id, email, telefon, craft_id, experience, location, lat, lng, website, instagram, bio, handwerks_karten_nummer, accepted
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING id;
         "#,
         if is_admin { None } else { Some(viewer_id) },
@@ -265,6 +289,8 @@ pub async fn create_profile(
         craft_id,
         experience,
         location,
+        lat,
+        lng,
         website,
         instagram,
         bio,
@@ -367,14 +393,14 @@ pub async fn create_profile(
         let max_dim = 800u32;
 
         // Compute scale factors for each dimension
-        let scale_w = max_dim as f32 / orig_w as f32;
-        let scale_h = max_dim as f32 / orig_h as f32;
+        let scale_w = max_dim as f64 / orig_w as f64;
+        let scale_h = max_dim as f64 / orig_h as f64;
         // We pick the smaller scale so that neither dimension exceeds 600
         let scale = scale_w.min(scale_h).min(1.0);
         // If the image is already smaller than 600 in both dimensions, scale=1.0 => no resize
 
-        let new_w = (orig_w as f32 * scale).round() as u32;
-        let new_h = (orig_h as f32 * scale).round() as u32;
+        let new_w = (orig_w as f64 * scale).round() as u32;
+        let new_h = (orig_h as f64 * scale).round() as u32;
 
         let resized_img = if new_w != orig_w || new_h != orig_h {
             dyn_img.resize_exact(new_w, new_h, FilterType::CatmullRom)
@@ -477,22 +503,11 @@ pub async fn create_profile(
 pub async fn get_profiles(
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let profiles = sqlx::query!(
+    let rows = sqlx::query!(
         r#"
-        SELECT p.*, 
-            c.name as craft_name,
-            r.name as rechtsform_name,
-            r.explain_name as rechtsform_explain_name,
-            COALESCE(
-                json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
-            ) AS skills
+        SELECT p.id
         FROM profiles p
-        LEFT JOIN rechtsformen r ON p.rechtsform_id = r.id
-        LEFT JOIN crafts c ON p.craft_id = c.id
-        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
-        LEFT JOIN skills s ON ps.skill_id = s.id
         WHERE accepted = true
-        GROUP BY p.id, c.name, r.name, r.explain_name
         "#
     )
     .fetch_all(&data.db)
@@ -508,39 +523,32 @@ pub async fn get_profiles(
         )
     })?;
 
-    let profiles_json: Vec<serde_json::Value> = profiles
+    let response_data: Vec<serde_json::Value> = rows
         .iter()
-        .map(|p| {
-            let skills: Vec<String> = p
-                .skills
-                .as_ref()
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-
+        .map(|row| {
             json!({
-                "id": p.id,
-                "viewer_id": p.viewer_id,
-                "name": p.name,
-                "rechtsform_name": p.rechtsform_name,
-                "rechtsform_explain_name": p.rechtsform_explain_name,
-                "email": p.email.to_lowercase(),
-                "telefon": p.telefon,
-                "craft": p.craft_name,
-                "experience": p.experience,
-                "location": p.location,
-                "website": p.website,
-                "instagram": p.instagram,
-                "bio": p.bio,
-                "handwerks_karten_nummer": p.handwerks_karten_nummer,
-                "skills": skills
+                "id": row.id,
+                "_links": {
+                    "self": format!("{}/api/profile/{}", data.url, row.id)
+                }
             })
         })
         .collect();
 
-    Ok(Json(json!({
-        "status": "success",
-        "data": profiles_json
-    })))
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=10"),
+    );
+
+    Ok((
+        headers,
+        Json(json!({
+            "status": "success",
+            "data": response_data
+        })),
+    ))
 }
 
 pub async fn get_profile(
@@ -586,33 +594,39 @@ pub async fn get_profile(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
 
-    println!("Returning profile...");
-
     let profile = json!({
-            "status": "success",
-            "data": {
-                "profile": {
-                    "id": query.id,
-                    "viewer_id": query.viewer_id,
-                    "name": query.name,
-                    "rechtsform_name": query.rechtsform_name,
-                    "rechtsform_explain_name": query.rechtsform_explain_name,
-                    "email": query.email.to_lowercase(),
-                    "telefon": query.telefon,
-                    "craft": query.craft_name,
-                    "experience": query.experience,
-                    "location": query.location,
-                    "website": query.website,
-                    "instagram": query.instagram,
-                    "bio": query.bio,
-                    "handwerks_karten_nummer": query.handwerks_karten_nummer,
-                    "skills": skills
-                }
+        "status": "success",
+        "data": {
+            "profile": {
+                "id": query.id,
+                "viewer_id": query.viewer_id,
+                "name": query.name,
+                "rechtsform_name": query.rechtsform_name,
+                "rechtsform_explain_name": query.rechtsform_explain_name,
+                "email": query.email.to_lowercase(),
+                "telefon": query.telefon,
+                "craft": query.craft_name,
+                "experience": query.experience,
+                "location": query.location,
+                "lat": query.lat,
+                "lng": query.lng,
+                "website": query.website,
+                "instagram": query.instagram,
+                "bio": query.bio,
+                "handwerks_karten_nummer": query.handwerks_karten_nummer,
+                "skills": skills
             }
         }
+    });
+
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=10"),
     );
-    println!("Profile to be returned: {:#?}", profile);
-    Ok((StatusCode::OK, Json(profile)))
+
+    Ok((headers, Json(profile)))
 }
 
 pub async fn get_profiles_by_search(
@@ -623,33 +637,12 @@ pub async fn get_profiles_by_search(
 
     let mut query_builder = QueryBuilder::new(
         r#"
-        SELECT
-            p.id,
-            p.viewer_id,
-            p.name,
-            p.rechtsform_id,
-            r.name            AS rechtsform_name,
-            r.explain_name    AS rechtsform_explain_name,
-            p.email,
-            p.telefon,
-            p.craft_id,
-            c.name            AS craft,
-            p.experience,
-            p.location,
-            p.website,
-            p.instagram,
-            p.bio,
-            p.handwerks_karten_nummer,
-            (
-                SELECT COALESCE(json_agg(s.name), '[]')
-                FROM profile_skill ps
-                JOIN skills s ON ps.skill_id = s.id
-                WHERE ps.profile_id = p.id
-            ) AS skills
-        FROM profiles p
-        LEFT JOIN rechtsformen r ON p.rechtsform_id = r.id
-        LEFT JOIN crafts c       ON p.craft_id = c.id
-        WHERE p.accepted = true AND 
+        SELECT DISTINCT profiles.id
+        FROM profiles
+        LEFT JOIN crafts ON profiles.craft_id = crafts.id
+        LEFT JOIN profile_skill ON profiles.id = profile_skill.profile_id
+        LEFT JOIN skills ON profile_skill.skill_id = skills.id
+        WHERE accepted = true AND
         "#,
     );
 
@@ -658,8 +651,9 @@ pub async fn get_profiles_by_search(
     if let Some(name) = &body.name {
         let trimmed_name = name.trim();
         if !trimmed_name.is_empty() {
-            query_builder.push("TRIM(p.name) = ");
-            query_builder.push_bind(trimmed_name);
+            query_builder.push("LOWER(TRIM(profiles.name)) LIKE LOWER(");
+            query_builder.push_bind(format!("%{}%", trimmed_name));
+            query_builder.push(")");
             has_condition = true;
         }
     }
@@ -670,22 +664,37 @@ pub async fn get_profiles_by_search(
             if has_condition {
                 query_builder.push(" AND ");
             }
-            query_builder.push("c.name = ");
-            query_builder.push_bind(trimmed_craft);
+            query_builder.push("LOWER(crafts.name) LIKE LOWER(");
+            query_builder.push_bind(format!("%{}%", trimmed_craft));
+            query_builder.push(")");
             has_condition = true;
         }
     }
 
-    if let Some(location) = &body.location {
-        let trimmed_location = location.trim();
-        if !trimmed_location.is_empty() {
-            if has_condition {
-                query_builder.push(" AND ");
-            }
-            query_builder.push("TRIM(p.location) = ");
-            query_builder.push_bind(trimmed_location);
-            has_condition = true;
+    // -- Distance filter (unchanged)
+    if let (Some(lat_val), Some(lng_val), Some(range_val)) = (body.lat, body.lng, body.range) {
+        if has_condition {
+            query_builder.push(" AND ");
         }
+        query_builder.push("
+            (
+                6371 * ACOS(
+                    COS(RADIANS(");
+        query_builder.push_bind(lat_val);
+        query_builder.push(")) *
+                    COS(RADIANS(profiles.lat)) *
+                    COS(RADIANS(profiles.lng) - RADIANS(");
+        query_builder.push_bind(lng_val);
+        query_builder.push(")) +
+                    SIN(RADIANS(");
+        query_builder.push_bind(lat_val);
+        query_builder.push(")) *
+                    SIN(RADIANS(profiles.lat))
+                )
+            ) <= ");
+        query_builder.push_bind(range_val);
+
+        has_condition = true;
     }
 
     if let Some(skill_name) = &body.skill {
@@ -694,8 +703,9 @@ pub async fn get_profiles_by_search(
             if has_condition {
                 query_builder.push(" AND ");
             }
-            query_builder.push("TRIM(skills.name) = ");
-            query_builder.push_bind(trimmed_skill);
+            query_builder.push("LOWER(TRIM(skills.name)) LIKE LOWER(");
+            query_builder.push_bind(format!("%{}%", trimmed_skill));
+            query_builder.push(")");
             has_condition = true;
         }
     }
@@ -710,11 +720,8 @@ pub async fn get_profiles_by_search(
         ));
     }
 
-    query_builder.push(" GROUP BY profiles.id, crafts.name");
-
     let query = query_builder.build();
-
-    let profiles = query.fetch_all(&data.db).await.map_err(|e| {
+    let rows = query.fetch_all(&data.db).await.map_err(|e| {
         eprintln!("get_profiles_by_search error: {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -725,82 +732,30 @@ pub async fn get_profiles_by_search(
         )
     })?;
 
-    let profiles_json: Vec<serde_json::Value> = profiles
-        .iter()
-        .map(|row| {
-            let skills: Vec<String> =
-                serde_json::from_value(row.get::<serde_json::Value, _>("skills"))
-                    .unwrap_or_default();
+    let profile_ids: Vec<Uuid> = rows.iter().map(|row| row.get("id")).collect();
 
-            json!({
-                "id": row.get::<Uuid, _>("id"),
-                "viewer_id": row.get::<Option<Uuid>, _>("viewer_id"),
-                "name": row.get::<String, _>("name"),
-                "rechtsform_name": row.get::<String, _>("rechtsform_name"),
-                "rechtsform_explain_name": row.get::<String, _>("rechtsform_explain_name"),
-                "email": row.get::<String, _>("email"),
-                "telefon": row.get::<String, _>("telefon"),
-                "craft": row.get::<String, _>("craft"),
-                "experience": row.get::<i16, _>("experience"),
-                "location": row.get::<String, _>("location"),
-                "website": row.get::<Option<String>, _>("website"),
-                "instagram": row.get::<Option<String>, _>("instagram"),
-                "bio": row.get::<String, _>("bio"),
-                "handwerks_karten_nummer": row.get::<String, _>("handwerks_karten_nummer"),
-                "skills": skills,
-            })
-        })
-        .collect();
-
-    Ok(Json(json!({
-        "status": "success",
-        "data": profiles_json
-    })))
-}
-
-pub async fn get_photo_metadata(
-    State(data): State<Arc<AppState>>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let photos = sqlx::query_as!(
-        PhotoMetadataModel,
-        "SELECT id, file_name, content_type FROM photos"
-    )
-    .fetch_all(&data.db)
-    .await
-    .map_err(|e| {
-        eprintln!("get_photos_metadata: {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "fail",
-                "message": "Internal Server Error"
-            })),
-        )
-    })?;
-
-    let photo_responses: Vec<serde_json::Value> = photos
+    let response_data: Vec<serde_json::Value> = profile_ids
         .into_iter()
-        .map(|photo| {
+        .map(|id| {
             json!({
-                "id": photo.id,
-                "file_name": photo.file_name,
-                "content_type": photo.content_type,
-                "url": format!("{}/api/photos/{}", &data.url, photo.id)
+                "id": id,
+                "_links": {
+                    "self": format!("{}/api/profile/{}", data.url, id)
+                }
             })
         })
         .collect();
 
     Ok(Json(json!({
         "status": "success",
-        "data": photo_responses
+        "data": response_data
     })))
 }
-
 pub async fn get_photo(
     State(data): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
+    Query(_params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    println!("Get photo with id: {}", id);
     let photo = sqlx::query_as!(
         PhotoDataModel,
         "SELECT file_name, content_type, photo_data FROM photos WHERE id = $1",
@@ -833,56 +788,64 @@ pub async fn get_photo(
         "Cache-Control",
         HeaderValue::from_static("public, max-age=31536000, immutable"),
     );
-    headers.insert(
-        "ETag",
-        HeaderValue::from_str(&format!("\"{}\"", id)).unwrap(),
-    );
     Ok((headers, photo.photo_data))
 }
-
 pub async fn get_photos_of_profile(
     State(data): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
+    Path(profile_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let rows = sqlx::query!(
-        r#"
-            SELECT 
-                photos.id
-            FROM 
-                photos
-            WHERE 
-                photos.profile_id = $1;
-        "#,
-        id
-    )
-    .fetch_all(&data.db)
-    .await
-    .map_err(|e| {
-        eprintln!("get_photos_by_profile: {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "fail",
-                "message": "Internal Server Error"
-            })),
+    let mut retries = 3;
+    let mut delay = tokio::time::Duration::from_secs(1);
+    
+    loop {
+        let result = sqlx::query!(
+            r#"SELECT id FROM photos WHERE profile_id = $1"#,
+            profile_id
         )
-    })?;
-
-    let photo_data: Vec<serde_json::Value> = rows
-        .iter()
-        .map(|row| {
-            json!({
-                "id": row.id,
-                "url": format!("{}/api/photos/{}", data.url, row.id),
-            })
-        })
-        .collect();
-
-    Ok(Json(json!({
-        "status": "success",
-        "data": photo_data
-    })))
+        .fetch_all(&data.db)
+        .await;
+        
+        match result {
+            Ok(rows) => {
+                // Process rows and return success
+                let photo_data = rows.iter().map(|row| {
+                    json!({
+                        "id": row.id,
+                        "_links": {
+                            "self": format!("{}/api/photos/{}", data.url, row.id)
+                        }
+                    })
+                }).collect::<Vec<_>>();
+                
+                let mut headers = HeaderMap::new();
+                headers.insert("Content-Type", HeaderValue::from_static("application/json"));
+                headers.insert("Cache-Control", HeaderValue::from_static("public, max-age=60"));
+                
+                return Ok((headers, Json(json!({
+                    "status": "success",
+                    "data": photo_data
+                }))));
+            }
+            Err(e) if retries > 0 => {
+                eprintln!("get_photos_of_profile error (retrying): {:?}", e);
+                retries -= 1;
+                tokio::time::sleep(delay).await;
+                delay *= 2; // Exponential backoff
+            }
+            Err(e) => {
+                eprintln!("get_photos_of_profile error: {:?}", e);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "status": "fail",
+                        "message": "Internal Server Error"
+                    })),
+                ));
+            }
+        }
+    }
 }
+
 
 pub async fn update_profile(
     State(data): State<Arc<AppState>>,
@@ -928,6 +891,8 @@ pub async fn update_profile(
     let mut craft_id: Option<Uuid> = None;
     let mut experience: Option<i16> = None;
     let mut location: Option<String> = None;
+    let mut lat: Option<f64> = None;
+    let mut lng: Option<f64> = None;
     let mut website: Option<String> = None;
     let mut instagram: Option<String> = None;
     let mut bio: Option<String> = None;
@@ -979,7 +944,7 @@ pub async fn update_profile(
             // Use stored `field_name` instead of calling `field.name()` again
             match field_name.as_str() {
                 "name" => name = Some(text),
-                "rechtsform" => {
+                "rechtsform_explain_name" => {
                     let rechtsform_result = sqlx::query!(
                         "SELECT id FROM rechtsformen WHERE explain_name = $1",
                         text
@@ -1042,6 +1007,22 @@ pub async fn update_profile(
                         )
                     })?)
                 }
+                "lat" => {
+                    lat = Some(text.parse::<f64>().map_err(|_| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"status": "fail", "message": "Invalid experience format"})),
+                        )
+                    })?)
+                }
+                "lng" => {
+                    lng = Some(text.parse::<f64>().map_err(|_| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"status": "fail", "message": "Invalid experience format"})),
+                        )
+                    })?)
+                }
                 "location" => location = Some(text),
                 "website" => website = Some(text),
                 "instagram" => instagram = Some(text),
@@ -1079,6 +1060,12 @@ pub async fn update_profile(
     }
     if let Some(location) = location {
         query_builder.push(", location = ").push_bind(location);
+    }
+    if let Some(lat) = lat {
+        query_builder.push(", lat = ").push_bind(lat);
+    }
+    if let Some(lng) = lng {
+        query_builder.push(", lng = ").push_bind(lng);
     }
     if let Some(website) = website {
         query_builder.push(", website = ").push_bind(website);
@@ -1211,12 +1198,12 @@ pub async fn update_profile(
         let (orig_w, orig_h) = dyn_img.dimensions();
         let max_dim = 800u32;
 
-        let scale_w = max_dim as f32 / orig_w as f32;
-        let scale_h = max_dim as f32 / orig_h as f32;
+        let scale_w = max_dim as f64 / orig_w as f64;
+        let scale_h = max_dim as f64 / orig_h as f64;
         let scale = scale_w.min(scale_h).min(1.0);
 
-        let new_w = (orig_w as f32 * scale).round() as u32;
-        let new_h = (orig_h as f32 * scale).round() as u32;
+        let new_w = (orig_w as f64 * scale).round() as u32;
+        let new_h = (orig_h as f64 * scale).round() as u32;
 
         let resized_img = if new_w != orig_w || new_h != orig_h {
             dyn_img.resize_exact(new_w, new_h, FilterType::CatmullRom)
@@ -1298,8 +1285,7 @@ pub async fn update_profile(
 pub async fn delete_profile(
     State(data): State<Arc<AppState>>,
     AuthenticatedViewer {
-        viewer_id,
-        is_admin,
+        is_admin, ..
     }: AuthenticatedViewer,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
@@ -1349,8 +1335,7 @@ pub async fn delete_profile(
 pub async fn get_profile_id(
     State(data): State<Arc<AppState>>,
     AuthenticatedViewer {
-        viewer_id,
-        is_admin,
+        viewer_id, ..
     }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let profile_record = sqlx::query!(
@@ -1398,8 +1383,7 @@ pub async fn get_profile_id(
 pub async fn get_unaccepted_profiles(
     State(data): State<Arc<AppState>>,
     AuthenticatedViewer {
-        viewer_id: _viewer_id,
-        is_admin,
+        is_admin, ..
     }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     if !is_admin {
@@ -1407,26 +1391,16 @@ pub async fn get_unaccepted_profiles(
             StatusCode::UNAUTHORIZED,
             Json(json!({
                 "status": "fail",
-                "message": "Only admins can accept profiles."
+                "message": "Forbidden."
             })),
         ));
     }
-    let profiles = sqlx::query!(
+
+    let rows = sqlx::query!(
         r#"
-        SELECT p.*, 
-               c.name AS craft_name,
-               r.name AS rechtsform_name,
-               r.explain_name AS rechtsform_explain_name,
-               COALESCE(
-                   json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
-               ) AS skills
+        SELECT p.id
         FROM profiles p
-        LEFT JOIN rechtsformen r ON p.rechtsform_id = r.id
-        LEFT JOIN crafts c ON p.craft_id = c.id
-        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
-        LEFT JOIN skills s ON ps.skill_id = s.id
         WHERE p.accepted = false
-        GROUP BY p.id, c.name, r.name, r.explain_name
         "#
     )
     .fetch_all(&data.db)
@@ -1442,47 +1416,30 @@ pub async fn get_unaccepted_profiles(
         )
     })?;
 
-    let profiles_json: Vec<serde_json::Value> = profiles
-        .iter()
-        .map(|p| {
-            // Parse the 'skills' JSON array into a Vec<String>
-            let skills: Vec<String> = p
-                .skills
-                .as_ref()
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
+    let profile_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
 
+    let response_data: Vec<serde_json::Value> = profile_ids
+        .into_iter()
+        .map(|id| {
             json!({
-                "id": p.id,
-                "viewer_id": p.viewer_id,
-                "name": p.name,
-                "rechtsform_name": p.rechtsform_name,
-                "rechtsform_explain_name": p.rechtsform_explain_name,
-                "email": p.email.to_lowercase(),
-                "telefon": p.telefon,
-                "craft": p.craft_name,
-                "location": p.location,
-                "experience": p.experience,
-                "website": p.website,
-                "instagram": p.instagram,
-                "bio": p.bio,
-                "handwerks_karten_nummer": p.handwerks_karten_nummer,
-                "skills": skills
+                "id": id,
+                "_links": {
+                    "self": format!("{}/api/profile/{}", data.url, id)
+                }
             })
         })
         .collect();
 
     Ok(Json(json!({
         "status": "success",
-        "data": profiles_json
+        "data": response_data
     })))
 }
 
 pub async fn get_profiles_without_viewer(
     State(data): State<Arc<AppState>>,
     AuthenticatedViewer {
-        viewer_id: _viewer_id,
-        is_admin,
+        is_admin, ..
     }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     if !is_admin {
@@ -1494,22 +1451,12 @@ pub async fn get_profiles_without_viewer(
             })),
         ));
     }
-    let profiles = sqlx::query!(
+
+    let rows = sqlx::query!(
         r#"
-        SELECT p.*, 
-               c.name AS craft_name,
-               r.name AS rechtsform_name,
-               r.explain_name AS rechtsform_explain_name,
-               COALESCE(
-                   json_agg(s.name) FILTER (WHERE s.name IS NOT NULL), '[]'
-               ) AS skills
+        SELECT p.id
         FROM profiles p
-        LEFT JOIN rechtsformen r ON p.rechtsform_id = r.id
-        LEFT JOIN crafts c ON p.craft_id = c.id
-        LEFT JOIN profile_skill ps ON p.id = ps.profile_id
-        LEFT JOIN skills s ON ps.skill_id = s.id
         WHERE p.viewer_id IS NULL
-        GROUP BY p.id, c.name, r.name, r.explain_name
         "#
     )
     .fetch_all(&data.db)
@@ -1525,39 +1472,23 @@ pub async fn get_profiles_without_viewer(
         )
     })?;
 
-    let profiles_json: Vec<serde_json::Value> = profiles
-        .iter()
-        .map(|p| {
-            // Parse the 'skills' JSON array into a Vec<String>
-            let skills: Vec<String> = p
-                .skills
-                .as_ref()
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
+    let profile_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
 
+    let response_data: Vec<serde_json::Value> = profile_ids
+        .into_iter()
+        .map(|id| {
             json!({
-                "id": p.id,
-                "viewer_id": p.viewer_id,
-                "name": p.name,
-                "rechtsform_name": p.rechtsform_name,
-                "rechtsform_explain_name": p.rechtsform_explain_name,
-                "email": p.email.to_lowercase(),
-                "telefon": p.telefon,
-                "craft": p.craft_name,
-                "experience": p.experience,
-                "location": p.location,
-                "website": p.website,
-                "instagram": p.instagram,
-                "bio": p.bio,
-                "handwerks_karten_nummer": p.handwerks_karten_nummer,
-                "skills": skills
+                "id": id,
+                "_links": {
+                    "self": format!("{}/api/profile/{}", data.url, id)
+                }
             })
         })
         .collect();
 
     Ok(Json(json!({
         "status": "success",
-        "data": profiles_json
+        "data": response_data
     })))
 }
 
@@ -1565,8 +1496,7 @@ pub async fn accept_profile(
     State(data): State<Arc<AppState>>,
     Path(profile_id): Path<Uuid>,
     AuthenticatedViewer {
-        viewer_id: _viewer_id,
-        is_admin,
+        is_admin, ..
     }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     if !is_admin {
@@ -1663,3 +1593,4 @@ pub async fn get_profile_email(
         ))
     }
 }
+

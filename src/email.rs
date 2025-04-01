@@ -140,7 +140,7 @@ impl EmailManager {
                   <div class="content">
                     <p>Hey {recipient_name},</p>
                     <p>Wir haben eine Anfrage erhalten, dein Passwort zurückzusetzen.</p>
-                    <p>Wenn du die Anfrage nicht gestellt haben, ignoriere diese Nachricht einfach. Ansonsten kannst du dein Passwort zurücksetzen, indem du auf die Schaltfläche unten klickst.</p>
+                    <p>Wenn du die Anfrage nicht gestellt haben solltest, ignoriere diese Nachricht einfach. Ansonsten kannst du dein Passwort zurücksetzen, indem du auf die Schaltfläche unten klickst.</p>
 
                     <!-- Reset Button -->
                     <a href="{reset_link}" class="reset-button">Passwort zurücksetzen</a>
@@ -255,7 +255,7 @@ impl EmailManager {
                   <div class="content">
                     <p>Hey {recipient_name},</p>
                     <p>Wir haben eine Anfrage erhalten, Ihre E-Mail zu verifizieren.</p>
-                    <p>Wenn du die Anfrage nicht gestellt haben, ignoriere diese Nachricht einfach. Ansonsten kannst du deine E-Mail verifizieren, indem du auf die Schaltfläche unten klickst.</p>
+                    <p>Wenn du die Anfrage nicht gestellt haben solltest, ignoriere diese Nachricht einfach. Ansonsten kannst du deine E-Mail verifizieren, indem du auf die Schaltfläche unten klickst.</p>
 
                     <!-- Reset Button -->
                     <a href="{reset_link}" class="reset-button">E-Mail verifizieren</a>

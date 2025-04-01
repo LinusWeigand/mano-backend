@@ -78,6 +78,8 @@ pub struct ProfileModel {
     pub craft_id: Uuid,
     pub experience: i16,
     pub location: String,
+    pub lat: f32,
+    pub lng: f32,
     pub website: Option<String>,
     pub instagram: Option<String>,
     pub bio: String,
@@ -99,14 +101,6 @@ pub struct PhotoModel {
     pub version: i16,
     #[serde(rename = "createdAt")]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-#[derive(Debug, FromRow, Deserialize, Serialize)]
-#[allow(non_snake_case)]
-pub struct PhotoMetadataModel {
-    pub id: Uuid,
-    pub file_name: String,
-    pub content_type: String,
 }
 
 #[derive(Debug, FromRow, Deserialize, Serialize)]
