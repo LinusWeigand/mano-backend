@@ -80,6 +80,7 @@ pub async fn is_admin(
         is_admin,
     }: AuthenticatedViewer,
 ) -> impl IntoResponse {
+    println!("IS ADMIn");
     let email = match sqlx::query_as!(
         ViewerModel,
         "SELECT * FROM viewers WHERE id = $1",
@@ -98,6 +99,11 @@ pub async fn is_admin(
         }
     };
 
+    println!("IS ADMIn EMAIL: {}", email);
+    println!("IS ADMIn viewer id: {}", viewer_id);
+
+    println!("IS ADMIN: {}", is_admin);
+
     Ok(Json(json!({
         "isLoggedIn": true,
         "is_admin": is_admin,
@@ -112,13 +118,13 @@ pub async fn logout(
     }: AuthenticatedViewer,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     // Development
-    let session_token_cookie = "session_token=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
-    let session_id_cookie = "session_id=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
+    // let session_token_cookie = "session_token=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
+    // let session_id_cookie = "session_id=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
 
     // TODO: Production
-    // let session_token_cookie =
-    //     "session_token=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
-    // let session_id_cookie = "session_id=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
+    let session_token_cookie =
+        "session_token=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
+    let session_id_cookie = "session_id=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0";
 
     let mut headers = axum::http::HeaderMap::new();
     headers.append(header::SET_COOKIE, session_token_cookie.parse().unwrap());
@@ -599,25 +605,37 @@ pub async fn get_viewer(
     State(data): State<Arc<AppState>>,
     Path(email): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(
-        ViewerModel,
-        "SELECT * FROM viewers WHERE email = $1",
+    let exists = sqlx::query_scalar!(
+        "SELECT 1 FROM viewers WHERE email = $1",
         email.to_lowercase()
     )
-    .fetch_one(&data.db)
-    .await;
+    .fetch_optional(&data.db)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "fail",
+                "message": format!("Database error: {:?}", e)
+            })),
+        )
+    })?;
 
-    match query_result {
-        Ok(viewer) => {
-            let viewer_response = json!({"status": "success", "data": json!({ "viewer": viewer})});
-            println!("get_viewer: viewer found.");
-            Ok(Json(viewer_response))
-        }
-        Err(e) => {
-            let error_response = json!({"status": "fail", "message": format!("Viewer with id {} not found: {:?}", email, e)});
-            println!("get_viewer: viewer not found.");
-            Err((StatusCode::NOT_FOUND, Json(error_response)))
-        }
+    if exists.is_some() {
+        println!("get_viewer: viewer found.");
+        Ok(Json(json!({
+            "status": "success",
+            "message": "Viewer exists"
+        })))
+    } else {
+        println!("get_viewer: viewer not found.");
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "fail",
+                "message": format!("Viewer with email {} not found", email)
+            })),
+        ))
     }
 }
 
